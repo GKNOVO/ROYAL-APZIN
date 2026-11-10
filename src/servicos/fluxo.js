@@ -42,10 +42,11 @@ function textoJogadores(lista) {
 
 function embedPartida(partida, lista) {
   const modo = config.modoPorId(partida.modo);
+  const variante = config.varianteDoModo(modo, partida.gelo);
   const campos = [
     { name: 'Modo', value: modo ? modo.titulo : partida.modo, inline: true },
     { name: 'Aposta', value: reais(partida.preco), inline: true },
-    { name: 'Gelo', value: partida.gelo === 'infinito' ? '🧊 Gelo Infinito' : '🧊 Gelo Normal', inline: true },
+    { name: 'Tipo', value: variante ? `${variante.emoji} ${variante.nome}` : partida.gelo, inline: true },
     { name: 'Jogadores', value: textoJogadores(lista), inline: false },
     {
       name: 'Regra da partida',
@@ -304,6 +305,43 @@ async function atualizarPartida(client, db, partidaId) {
 }
 
 /**
+ * Manda a chave PIX do mediador na sala e na DM dos jogadores.
+ * Usado pelo botão "Enviar PIX" e pelo comando /pix.
+ */
+async function anunciarPix(client, db, { partidaId, mediadorId, chave, titular }) {
+  const partida = partidas.salvarPix(db, partidaId, { chave, titular });
+  await atualizarPartida(client, db, partidaId);
+
+  const jogadores = partidas.jogadores(db, partidaId);
+  const aviso = jogadores.map((linha) => mencao(linha.user_id)).join(' ');
+  const texto = [
+    `💸 **PIX do mediador** — ${mencao(mediadorId)}`,
+    `**Chave:** \`${chave}\``,
+    titular ? `**Titular:** ${titular}` : null,
+    `**Valor por jogador:** ${reais(partida.preco)}`,
+    '',
+    'Enviem o comprovante **nesta sala**. O mediador libera a sala depois de conferir.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  try {
+    const canal =
+      client.channels.cache.get(partida.canal_id) || (await client.channels.fetch(partida.canal_id));
+    await canal?.send({ content: `${aviso}\n${texto}`, allowedMentions: { parse: ['users'] } });
+
+    for (const linha of jogadores) {
+      const membro = await canal?.guild?.members?.fetch?.(linha.user_id)?.catch(() => null);
+      await membro?.send?.({ embeds: [embed('💸 PIX do seu AP', texto)] })?.catch?.(() => {});
+    }
+  } catch (erro) {
+    console.error('[fluxo] não consegui anunciar o PIX:', erro.message);
+  }
+
+  return partida;
+}
+
+/**
  * Coloca o jogador na fila e, se o grupo fechar, cria a sala privada.
  * Lança Error com mensagem amigável quando algo impede a entrada.
  */
@@ -312,7 +350,9 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
   if (!modoInfo) throw new Error('Modo de AP inválido.');
   const valor = Number(preco);
   if (!config.PRECOS.includes(valor)) throw new Error('Faixa de aposta inválida.');
-  if (!config.GELOS[gelo]) throw new Error('Tipo de gelo inválido.');
+  if (!config.varianteDoModo(modoInfo, gelo)) {
+    throw new Error('Escolha uma opção de entrada válida para esse modo.');
+  }
 
   const bloqueio = blacklist.obter(db, guild.id, userId);
   if (bloqueio) throw new Error(`Você está na lista negra da ORG: **${bloqueio.motivo}**.`);
@@ -440,6 +480,7 @@ module.exports = {
   publicarSala,
   atualizarPartida,
   entrarNaFila,
+  anunciarPix,
   encerrarPartida,
   aplicarWO,
   cancelarPartida,
