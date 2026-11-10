@@ -89,6 +89,19 @@ apagado a cada reinício/deploy — filas em andamento, ranking e histórico vol
 guardar tudo de verdade use um **Persistent Disk** (plano pago) com `DATABASE_PATH=/var/data/royal.db`,
 ou continue hospedando no celular/Termux, onde o arquivo fica salvo.
 
+### Resposta rápida (nunca mais “O aplicativo não respondeu”)
+
+O Discord cancela qualquer comando que não responda em **3 segundos**. Por isso o bot responde
+**antes** de fazer o trabalho pesado:
+
+- Todo comando faz `deferReply` automático no despachante (`src/comandos/index.js`) — efêmero por
+  padrão; `/ranking`, `/vencedor` e `/wo` respondem em público.
+- A resposta final chega com `editReply`, sem deixar a mensagem “pensando” na tela.
+- Botões e menus fazem `deferUpdate` na hora; o resultado vai em mensagem privada e o painel
+  continua intacto. Botões que abrem modal (`regras`, `liberar`) não são adiados, porque o modal
+  precisa ser a primeira resposta.
+- Qualquer erro inesperado vira uma mensagem amigável em vez de tela travada.
+
 ---
 
 ## 3. O que preencher no `.env` (importante)
