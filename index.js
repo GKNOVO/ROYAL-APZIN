@@ -8,7 +8,12 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const config = require('./src/config');
 const { abrirBanco } = require('./src/db');
+const { iniciarServidor } = require('./src/servidor');
 const eventos = require('./src/eventos');
+
+// A porta HTTP abre antes de tudo: é por ela que o Render (e qualquer hospedagem
+// tipo Web Service) confirma que o processo está vivo, mesmo enquanto o bot conecta.
+const servidorHttp = iniciarServidor();
 
 const erroConfig = config.validarToken();
 if (erroConfig) {
@@ -37,6 +42,10 @@ const client = new Client({
 
 eventos.montar(client, db);
 eventos.ligarProcesso(db);
+
+process.on('SIGTERM', () => {
+  servidorHttp.close?.();
+});
 
 client.login(config.TOKEN).catch((erro) => {
   const mensagem = String(erro?.message || erro);
