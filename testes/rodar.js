@@ -4,7 +4,7 @@
  * Testes offline do bot Royal AP (não precisa de internet nem token):
  *   node testes/rodar.js
  *
- * Testa banco, filas, partidas, PIX, fluxo da sala, painéis e os 45 comandos.
+ * Testa banco, filas, partidas, PIX, fluxo da sala, painéis, tickets e os 48 comandos.
  */
 
 process.env.DISCORD_TOKEN = 'token-de-teste';
@@ -26,6 +26,8 @@ const fluxo = require('../src/servicos/fluxo');
 const blacklist = require('../src/servicos/blacklist');
 const auditoria = require('../src/servicos/auditoria');
 const comandos = require('../src/comandos');
+const tickets = require('../src/servicos/tickets');
+const { reais } = require('../src/util/embeds');
 
 const MANAGE_GUILD = PermissionsBitField.Flags.ManageGuild;
 let ok = 0;
@@ -105,13 +107,23 @@ function ambienteFalso() {
   return { client, guild };
 }
 
-function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options = {}, perms = [], roles = [] } = {}) {
+function fakeInteraction({
+  commandName,
+  userId = 'u1',
+  guildId = 'g1',
+  channelId = 'canal-1',
+  channel = null,
+  options = {},
+  perms = [],
+  roles = [],
+} = {}) {
   const chamadas = {};
   const interaction = {
     commandName,
     guildId,
     guild: { id: guildId },
-    channelId: 'canal-1',
+    channelId,
+    channel: channel ?? { id: channelId, isTextBased: () => true },
     commandName2: null,
     user: { id: userId, tag: `user#${userId}`, username: userId, bot: false },
     member: {
@@ -150,6 +162,10 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
     async followUp(payload) {
       chamadas.followUp = payload;
       return payload;
+    },
+    async deleteReply() {
+      chamadas.deleteReply = true;
+      return true;
     },
     async update(payload) {
       chamadas.update = payload;
@@ -381,14 +397,14 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
 
     // modo 4x4 precisa de 8 jogadores
     for (let i = 1; i <= 7; i += 1) {
-      filas.entrar(db2, { guildId: guild.id, modo: 'x4misto', preco: 10000, gelo: 'infinito', userId: `t${i}` });
+      filas.entrar(db2, { guildId: guild.id, modo: 'x4misto', preco: 10000, gelo: 'emu1', userId: `t${i}` });
     }
     const oitavo = await fluxo.entrarNaFila(client, db2, {
       guild,
       userId: 't8',
       modo: 'x4misto',
       preco: 10000,
-      gelo: 'infinito',
+      gelo: 'emu1',
     });
     assert.strictEqual(oitavo.fechou, true);
     const jogadores4x4 = partidas.jogadores(db2, oitavo.partida.id);
@@ -437,26 +453,62 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
 
     const embed = painel.embeds[0].toJSON();
     assert.ok(embed.title.includes('1x1'));
-    assert.strictEqual(embed.fields.length, config.PRECOS.length);
-    assert.strictEqual(config.PRECOS.length, 13);
-    assert.ok(embed.fields[0].name.includes('R$ 0,50'));
-    assert.ok(embed.fields[12].name.includes('R$ 100,00'));
-    passar('painel: 13 faixas de R$ 0,50 a R$ 100,00 no embed');
+    assert.strictEqual(config.PRECOS.length, 14);
+    assert.strictEqual(embed.fields.length, 14);
+    assert.ok(embed.fields[0].name.includes('R$ 0,50'), 'primeiro card é R$ 0,50');
+    assert.ok(embed.fields[13].name.includes('R$ 100,00'), 'último card é R$ 100,00');
+    assert.deepStrictEqual(config.PRECOS.map(reais), [
+      'R$ 0,50', 'R$ 1,00', 'R$ 1,50', 'R$ 2,50', 'R$ 5,00', 'R$ 10,00', 'R$ 20,00',
+      'R$ 30,00', 'R$ 40,00', 'R$ 50,00', 'R$ 70,00', 'R$ 80,00', 'R$ 90,00', 'R$ 100,00',
+    ]);
+    passar('painel: 14 cards na ordem certa (R$ 0,50 no topo · R$ 100,00 no fundo)');
 
-    const menu = painel.components[0].toJSON();
-    assert.strictEqual(menu.components[0].custom_id, 'ap:preco:x1mobile');
-    assert.strictEqual(menu.components[0].options.length, 13);
-    const botoes = painel.components[1].toJSON().components.map((botao) => botao.custom_id);
-    assert.deepStrictEqual(botoes, ['ap:sair:x1mobile:todos', 'ap:ranking', 'ap:como']);
-    passar('painel: menu de preços e botões de sair/ranking/ajuda');
+    const menu = painel.components[0].toJSON().components[0];
+    assert.strictEqual(menu.custom_id, 'ap:preco:x1mobile');
+    assert.strictEqual(menu.options.length, 14);
+    const botoesPainel = painel.components[1].toJSON().components.map((botao) => botao.custom_id);
+    assert.deepStrictEqual(botoesPainel, ['ap:sair:x1mobile:todos', 'ap:como']);
+    passar('painel: menu com 14 valores e sem botão de ranking');
 
-    const gelo = paineis.componentesGelo(modo, 250)[0].toJSON().components;
+    const mobile = paineis.componentesEntrada(modo, 250)[0].toJSON().components;
     assert.deepStrictEqual(
-      gelo.map((botao) => botao.custom_id),
-      ['ap:gelo:x1mobile:250:infinito', 'ap:gelo:x1mobile:250:normal', 'ap:sair:x1mobile:250'],
+      mobile.map((botao) => botao.custom_id),
+      [
+        'ap:entrar:x1mobile:250:infinito',
+        'ap:entrar:x1mobile:250:normal',
+        'ap:sair:x1mobile:250',
+        'ap:como',
+      ],
     );
-    assert.ok(gelo[0].label.includes('Gelo Infinito') && gelo[1].label.includes('Gelo Normal'));
-    passar('painel: botões Gelo Infinito, Gelo Normal e Sair');
+    assert.deepStrictEqual(mobile.map((botao) => botao.label), [
+      'Gelo Infinito',
+      'Gelo Normal',
+      'Sair',
+      'Como funciona',
+    ]);
+    passar('cards mobile: Gelo Infinito · Gelo Normal · Sair · Como funciona');
+
+    const emu = paineis.componentesEntrada(config.modoPorId('x2emu'), 500)[0].toJSON().components;
+    assert.deepStrictEqual(emu.map((botao) => botao.label), [
+      'Normal',
+      'Full UMP e XM8',
+      'Sair',
+      'Como funciona',
+    ]);
+    const capa = paineis.componentesEntrada(config.modoPorId('x1fullcapa'), 500)[0].toJSON().components;
+    assert.deepStrictEqual(capa.map((botao) => botao.label), ['Full Capa', 'Sair', 'Como funciona']);
+    passar('cards emu e full capa: botões certos em cada categoria');
+
+    const misto = ['x2misto', 'x3misto', 'x4misto'].map(
+      (id) => paineis.componentesEntrada(config.modoPorId(id), 1000)[0].toJSON().components,
+    );
+    assert.deepStrictEqual(misto[0].map((botao) => botao.label), ['1 Emu', 'Sair']);
+    assert.deepStrictEqual(misto[1].map((botao) => botao.label), ['1 Emu', '2 Emu', 'Sair']);
+    assert.deepStrictEqual(misto[2].map((botao) => botao.label), ['1 Emu', '2 Emu', '3 Emu', 'Sair']);
+    for (const linha of misto) {
+      assert.ok(!linha.some((botao) => /Como funciona/.test(botao.label)), 'misto sem "Como funciona"');
+    }
+    passar('cards misto: 1/2/3 Emu + Sair, sem "Como funciona"');
 
     assert.strictEqual(config.MODOS.length, 15);
     const titulos = config.MODOS.map((m) => m.titulo);
@@ -473,8 +525,9 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
     const obrigatorios = [
       'addgiros', 'addvitoria', 'ajuda', 'analista', 'anunciar', 'apostas', 'aux', 'blacklist',
       'boombot', 'conectar', 'convites', 'desconectar', 'enviar_dm', 'envio_massa', 'limpar',
-      'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'ranking',
-      'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'vencedor', 'vitoria', 'wo',
+      'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'pix', 'ranking',
+      'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
+      'vencedor', 'vitoria', 'wo',
     ];
     for (const nome of obrigatorios) {
       assert.ok(nomes.includes(nome), `faltou o comando /${nome}`);
@@ -483,9 +536,9 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 45);
-    assert.strictEqual(new Set(nomes).size, 45, 'nome de comando repetido');
-    passar('comandos: 45 registrados (30 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 48);
+    assert.strictEqual(new Set(nomes).size, 48, 'nome de comando repetido');
+    passar('comandos: 48 registrados (33 gerais + 15 painéis), sem repetição');
 
     const blacklistComando = definicoes.find((comando) => comando.name === 'blacklist');
     assert.deepStrictEqual(
@@ -551,6 +604,107 @@ function fakeInteraction({ commandName, userId = 'u1', guildId = 'g1', options =
     });
     assert.ok(status.chamadas.reply.embeds[0].toJSON().title.includes('Status'));
     passar('/boombot status: mostra saúde do bot');
+
+    // /ticket: Central de Atendimento efêmera, apaga em 15s
+    const ticket = fakeInteraction({ commandName: 'ticket' });
+    await comandos.executar(ticket, { db, client: null });
+    assert.strictEqual(ticket.chamadas.reply.flags, 64);
+    assert.deepStrictEqual(
+      ticket.chamadas.reply.components[0].toJSON().components.map((botao) => botao.label),
+      ['Suporte', 'Reembolso', 'Resgatar Evento', 'Vagas', 'Divulgação'],
+    );
+    assert.ok(ticket.__expiraTicket, 'timer de 15s agendado');
+    clearTimeout(ticket.__expiraTicket);
+    passar('/ticket: painel efêmero com 5 setores e expiração de 15s');
+
+    // /aux desativado de propósito
+    const aux = fakeInteraction({ commandName: 'aux' });
+    await comandos.executar(aux, { db, client: null });
+    assert.ok(aux.chamadas.reply.content.includes('/ticket'));
+    assert.strictEqual(aux.chamadas.reply.flags, 64);
+    passar('/aux: só orienta a usar /ticket (não abre ticket)');
+
+    // /ticketfixo: bloqueia quem não é ADM
+    const fixoSemPermissao = fakeInteraction({ commandName: 'ticketfixo' });
+    await comandos.executar(fixoSemPermissao, { db, client: null });
+    assert.ok(fixoSemPermissao.chamadas.reply, 'respondeu negando');
+    passar('/ticketfixo: bloqueia quem não é ADM');
+
+    // /ticketfixo: publica no canal para ADM
+    const canalFixo = {
+      id: 'canal-fixo',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalFixo.enviadas.push(payload);
+        return { id: 'msg-central' };
+      },
+    };
+    const fixo = fakeInteraction({
+      commandName: 'ticketfixo',
+      channel: canalFixo,
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(fixo, { db, client: null });
+    assert.strictEqual(canalFixo.enviadas.length, 1);
+    assert.strictEqual(canalFixo.enviadas[0].components[0].toJSON().components.length, 5);
+    passar('/ticketfixo: publica a Central de Atendimento permanente');
+
+    // Abertura de ticket: canal privado + boas-vindas do setor
+    const { client: clientTicket, guild: guildTicket } = ambienteFalso();
+    const aberto = await tickets.abrirTicket(
+      { guild: guildTicket, guildId: 'g1', user: { id: 'j9', username: 'jogador9', tag: 'jogador9#1' } },
+      { db, client: clientTicket, tipo: 'vagas' },
+    );
+    assert.strictEqual(aberto.canal.name, 'vagas-jogador9');
+    assert.strictEqual(aberto.existente, false);
+    const boasVindas = aberto.canal.enviadas[0].payload.embeds[0].toJSON();
+    assert.ok(boasVindas.description.includes('Free Fire'));
+    assert.ok(boasVindas.description.includes('Nick'));
+    assert.ok(boasVindas.description.toLowerCase().includes('atividade'));
+    passar('ticket: canal privado criado com boas-vindas de vagas');
+
+    // /pix dentro da sala: mediador manda a chave pelo comando
+    const pixCanal = {
+      id: 'canal-pix',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        pixCanal.enviadas.push(payload);
+        return { id: 'msg-pix' };
+      },
+    };
+    const clientePix = {
+      channels: {
+        cache: new Collection([['canal-pix', pixCanal]]),
+        async fetch(id) {
+          return id === 'canal-pix' ? pixCanal : null;
+        },
+      },
+    };
+    const partidaPix = partidas.criar(db, {
+      guildId: 'g1',
+      modo: 'x1mobile',
+      preco: 500,
+      gelo: 'infinito',
+      canalId: 'canal-pix',
+      jogadores: [{ userId: 'u1', time: 1 }, { userId: 'u2', time: 2 }],
+    });
+    partidas.confirmar(db, partidaPix.id, 'u1');
+    partidas.confirmar(db, partidaPix.id, 'u2');
+    partidas.assumir(db, partidaPix.id, 'u1', 0.05);
+    staff.registrarPix(db, { guildId: 'g1', userId: 'u1', chave: 'pix@sala', titular: 'U1' });
+
+    const pix = fakeInteraction({
+      commandName: 'pix',
+      userId: 'u1',
+      channelId: 'canal-pix',
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(pix, { db, client: clientePix });
+    assert.strictEqual(partidas.buscar(db, partidaPix.id).pix_chave, 'pix@sala');
+    assert.ok(pixCanal.enviadas.length >= 1, 'PIX publicado na sala');
+    passar('/pix: mediador envia a chave na sala pelo comando');
   }
 
   // ---------- limpeza ----------
