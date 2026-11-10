@@ -53,6 +53,44 @@ Se aparecer o erro **“Nenhum motor de SQLite disponível”**, atualize o Node
 
 ---
 
+## 2.1 Rodar de graça no Render (Web Service)
+
+O Render espera um site respondendo em uma porta. O bot agora abre sozinho um **servidor de saúde**
+na porta que o Render mandar (`PORT`), então o aviso *“No open ports detected”* desaparece e o
+serviço não entra mais em timeout.
+
+1. Suba a pasta do bot num repositório do **GitHub**.
+2. No Render: **New +** → **Web Service** → escolha o repositório.
+3. Preencha:
+   - **Runtime:** `Node`
+   - **Build Command:** `npm install`
+   - **Start Command:** `npm start`
+   - **Instance Type:** `Free`
+4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
+   `CATEGORIA_FILAS_ID`, `CATEGORIA_SUPORTE_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
+   `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
+   Não precisa criar `PORT`: o Render injeta essa variável sozinho.
+5. **Create Web Service**. Nos logs deve aparecer:
+
+```
+🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
+✅ Conectado como SeuBot#1234
+✅ 48 comandos registrados
+```
+
+**Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
+**“Bot Royal AP Online e Operante!”**. É essa resposta 200 que mantém o Render feliz.
+
+> Se preferir rodar no seu computador ou celular, nada muda: o servidor sobe na porta `3000`
+> (`PORT=3000` no `.env` se quiser trocar) e o bot funciona igual.
+
+⚠️ **Atenção ao disco no Render gratuito:** o disco é temporário, então `database/royal.db` é
+apagado a cada reinício/deploy — filas em andamento, ranking e histórico voltam do zero. Para
+guardar tudo de verdade use um **Persistent Disk** (plano pago) com `DATABASE_PATH=/var/data/royal.db`,
+ou continue hospedando no celular/Termux, onde o arquivo fica salvo.
+
+---
+
 ## 3. O que preencher no `.env` (importante)
 
 Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisas.
@@ -63,6 +101,7 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `CLIENT_ID` | não | ID da aplicação (o bot descobre sozinho) | `123456789012345678` |
 | `GUILD_ID` | não | ID do seu servidor. **Preencha para os comandos aparecerem na hora** (vazio = global, até 1h) | `987654321098765432` |
 | `DATABASE_PATH` | não | Onde fica o banco | `database/royal.db` |
+| `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
 | `CATEGORIA_FILAS_ID` | recomendado | Categoria onde as salas privadas de AP são criadas | `111222333444555666` |
 | `CATEGORIA_SUPORTE_ID` | opcional | Categoria dos tickets (`/aux`) | `111222333444555777` |
 | `CARGO_ADMIN_ID` | recomendado | Quem manda em tudo | ID do cargo ADM |
@@ -194,6 +233,7 @@ O ranking **não** fica dentro dos painéis: é o comando separado `/ranking`.
 ```
 index.js                      → entrada: valida .env, abre banco, conecta
 src/config.js                 → 15 modos, 14 faixas de preço, botões por categoria
+src/servidor.js               → servidor HTTP de saúde (porta do Render)
 src/db/esquema.js             → esquema SQLite (12 tabelas)
 src/db/index.js               → conexão, criação e configurações por servidor
 src/util/embeds.js            → embeds, formatação de R$, datas
@@ -227,7 +267,7 @@ npm test
 
 Os testes criam um banco temporário e um Discord falso em memória. Cobrem: esquema do banco, moedas e
 giros, fila (entrada, saída, reserva atômica), partida completa (regras → mediador → pagamento →
-sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 48 comandos, os tickets e
+sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 48 comandos, os tickets, o servidor HTTP e
 os handlers de `/registrar_pix`, `/ajuda`, `/perfil`, `/loja`, `/pix` e `/boombot`.
 
 ---
@@ -262,7 +302,7 @@ No Termux, use `termux-wake-lock` antes de `npm start` para o Android não pausa
 | `não consegui criar a sala privada` | Dê ao bot **Gerenciar Canais** e **Gerenciar Cargos**, e defina a categoria com `/boombot setcategoria` |
 | Mediador não consegue assumir | Ele precisa de cargo de staff/mediador **e** `/registrar_pix` |
 | PIX não aparece | O mediador precisa ter rodado `/registrar_pix`; o botão só funciona para quem assumiu |
-| Ranking zerado | Confira se est�� rodando na mesma pasta onde está `database/royal.db` |
+| Ranking zerado | Confira se está rodando na mesma pasta onde está `database/royal.db` |
 | `Nenhum motor de SQLite disponível` | Atualize o Node para 22.13+ ou rode `npm install better-sqlite3` |
 | `/envio_massa` não acha membros | Server Members Intent ligado + reiniciar o bot |
 
