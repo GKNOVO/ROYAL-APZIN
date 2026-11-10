@@ -8,6 +8,7 @@ const partidas = require('../servicos/partidas');
 const staff = require('../servicos/staff');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
+const tickets = require('../servicos/tickets');
 const auditoria = require('../servicos/auditoria');
 const { embed, embedSucesso, embedErro, reais, mencao, mencaoCargo, dataBR } = require('../util/embeds');
 const {
@@ -17,6 +18,8 @@ const {
   ehAdmin,
   ehStaff,
 } = require('../util/seguranca');
+
+const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
 
 async function avisarMediadores(client, partida) {
   if (!config.CARGO_MEDIADOR_ID) return;
@@ -60,7 +63,7 @@ async function entrarNaFilaBotao(interaction, { db, client }, modoId, preco, gel
     return responderPrivado(interaction, {
       embeds: [
         embedSucesso(
-          `Você entrou na fila!\n**Modo:** ${modo.titulo}\n**Aposta:** ${reais(Number(preco))} · ${config.GELOS[gelo].nome}\n` +
+          `Você entrou na fila!\n**Modo:** ${modo.titulo}\n**Aposta:** ${reais(Number(preco))} · ${varianteNome(modo, gelo)}\n` +
             `**Posição:** ${resultado.posicao}\n**Faltam:** ${resultado.faltam} jogador(es) para fechar.`,
         ),
       ],
@@ -156,35 +159,12 @@ async function enviarPix(interaction, { db, client }, partidaId) {
     return responderErro(interaction, 'Essa sala é de outro mediador.');
   }
 
-  const atualizada = partidas.salvarPix(db, partidaId, {
+  await fluxo.anunciarPix(client, db, {
+    partidaId,
+    mediadorId: interaction.user.id,
     chave: registro.pix_chave,
     titular: registro.pix_titular,
   });
-  await fluxo.atualizarPartida(client, db, partidaId);
-
-  const jogadores = partidas.jogadores(db, partidaId);
-  const aviso = jogadores.map((linha) => mencao(linha.user_id)).join(' ');
-  const texto = [
-    `💸 **PIX do mediador** — ${mencao(interaction.user.id)}`,
-    `**Chave:** \`${registro.pix_chave}\``,
-    registro.pix_titular ? `**Titular:** ${registro.pix_titular}` : null,
-    `**Valor por jogador:** ${reais(atualizada.preco)}`,
-    '',
-    'Enviem o comprovante **nesta sala**. O mediador libera a sala depois de conferir.',
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  try {
-    const canal = client.channels.cache.get(atualizada.canal_id) || (await client.channels.fetch(atualizada.canal_id));
-    await canal.send({ content: `${aviso}\n${texto}`, allowedMentions: { parse: ['users'] } });
-    for (const linha of jogadores) {
-      const membro = await interaction.guild.members.fetch(linha.user_id).catch(() => null);
-      await membro?.send({ embeds: [embed('💸 PIX do seu AP', texto)] }).catch(() => {});
-    }
-  } catch (erro) {
-    console.error('[botoes] não consegui anunciar o PIX:', erro.message);
-  }
 
   return responderPrivado(interaction, { embeds: [embedSucesso('PIX enviado na sala. Confira os comprovantes.')] });
 }
@@ -236,6 +216,7 @@ async function handleBotao(interaction, ctx) {
 
   try {
     switch (acao) {
+      case 'entrar':
       case 'gelo':
         await entrarNaFilaBotao(interaction, ctx, args[0], args[1], args[2]);
         return true;
@@ -352,7 +333,7 @@ async function handleBotao(interaction, ctx) {
                 '4. Um jogador envia a regra e **todos** confirmam.\n' +
                 '5. O mediador assume, manda o PIX e confere o pagamento.\n' +
                 '6. Sala liberada → joguem → mediador declara o vencedor.\n\n' +
-                'Dúvida? Use `/aux` para abrir ticket.',
+                'Dúvida? Use `/ticket` para falar com a staff.',
               { rodape: 'ORG Royal AP' },
             ),
           ],
@@ -360,12 +341,24 @@ async function handleBotao(interaction, ctx) {
         return true;
       }
 
+      case 'central':
       case 'aux': {
-        const { abrirTicket } = require('../comandos/utilidades');
+        await responderPrivado(interaction, {
+          embeds: [tickets.embedCentral()],
+          components: tickets.componentesCentral(),
+        });
+        return true;
+      }
+
+      case 'ticket': {
         await interaction.deferReply({ flags: 64 }).catch(() => {});
         try {
-          const canal = await abrirTicket(interaction, { db, client, motivo: 'botão de suporte' });
-          await interaction.editReply({ content: `🎫 Ticket aberto: ${canal}.` });
+          const aberto = await tickets.abrirTicket(interaction, { db, client, tipo: args[0] });
+          await interaction.editReply({
+            content: aberto.existente
+              ? `🎫 Você já tem um ticket aberto: ${aberto.canal}.`
+              : `🎫 Ticket aberto: ${aberto.canal}. A staff já foi avisada.`,
+          });
         } catch (erro) {
           console.error('[botoes] ticket:', erro.message);
           await interaction.editReply({ content: '❌ Não consegui abrir o ticket. Chame um ADM.' });
