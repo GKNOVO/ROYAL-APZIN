@@ -11,8 +11,11 @@ const path = require('path');
 /** Texto que fica no .env de exemplo — usado para avisar o dono do bot. */
 const PLACEHOLDER = 'COLE_SEU_TOKEN_AQUI';
 
-/** Faixas de aposta em centavos: R$ 0,50 até R$ 100,00. */
-const PRECOS = [50, 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 7000, 8000, 9000, 10000];
+/**
+ * Faixas de aposta em centavos, na ordem dos cards do painel:
+ * R$ 0,50 no topo, valores crescendo, R$ 100,00 no fundo.
+ */
+const PRECOS = [50, 100, 150, 250, 500, 1000, 2000, 3000, 4000, 5000, 7000, 8000, 9000, 10000];
 
 const PLATAFORMAS = {
   mobile: 'mobile',
@@ -53,11 +56,40 @@ const MODOS = MODOS_BRUTOS.map(([id, nome, plataforma, time]) => ({
 
 const POR_ID = new Map(MODOS.map((modo) => [modo.id, modo]));
 
-/** Tipos de gelo aceitos nos botões. */
-const GELOS = {
-  infinito: { id: 'infinito', nome: 'Gelo Infinito', emoji: '🧊' },
-  normal: { id: 'normal', nome: 'Gelo Normal', emoji: '🧊' },
+/**
+ * Botões de entrada de cada categoria. O "id" é o que fica gravado na fila
+ * (coluna gelo), então não mude depois de já ter fila rodando.
+ */
+const VARIANTES = {
+  mobile: [
+    { id: 'infinito', nome: 'Gelo Infinito', emoji: '🧊' },
+    { id: 'normal', nome: 'Gelo Normal', emoji: '🧊' },
+  ],
+  emu: [
+    { id: 'normal', nome: 'Normal', emoji: '✔️' },
+    { id: 'ump_xm8', nome: 'Full UMP e XM8', emoji: '🔫' },
+  ],
+  fullcapa: [{ id: 'full_capa', nome: 'Full Capa', emoji: '🎯' }],
+  misto: [
+    { id: 'emu1', nome: '1 Emu', emoji: '🎮' },
+    { id: 'emu2', nome: '2 Emu', emoji: '🎮' },
+    { id: 'emu3', nome: '3 Emu', emoji: '🎮' },
+  ],
 };
+
+/** Misto varia com o tamanho do time: 2x2 tem 1 Emu, 3x3 tem 1 e 2, 4x4 tem 1, 2 e 3. */
+function variantesDoModo(modo) {
+  if (!modo) return [];
+  if (modo.plataforma === 'misto') return VARIANTES.misto.slice(0, Math.max(1, modo.time - 1));
+  return VARIANTES[modo.plataforma] || [];
+}
+
+function varianteDoModo(modo, id) {
+  return variantesDoModo(modo).find((variante) => variante.id === String(id)) || null;
+}
+
+/** No misto não existe botão "Como funciona" (regra do layout). */
+const mostrarComoFunciona = (modo) => Boolean(modo) && modo.plataforma !== 'misto';
 
 function texto(valor, padrao = '') {
   const limpo = String(valor ?? '').trim();
@@ -74,8 +106,11 @@ const config = {
   PLACEHOLDER,
   PRECOS,
   MODOS,
-  GELOS,
+  VARIANTES,
   PLATAFORMAS,
+  variantesDoModo,
+  varianteDoModo,
+  mostrarComoFunciona,
 
   TOKEN: texto(process.env.DISCORD_TOKEN),
   CLIENT_ID: texto(process.env.CLIENT_ID),
