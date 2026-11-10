@@ -214,6 +214,21 @@ async function handleBotao(interaction, ctx) {
   const args = partes.slice(2);
   const { db, client } = ctx;
 
+  // "regras" e "liberar" abrem modal: showModal precisa ser a PRIMEIRA resposta,
+  // por isso esses dois não podem ser adiados.
+  const abreModal = acao === 'regras' || acao === 'liberar';
+
+  // Confirma o clique imediatamente (deferUpdate) em todos os outros casos:
+  // o Discord nunca mostra "O aplicativo não respondeu". O painel continua
+  // igual e o texto do resultado vai em mensagem privada (followUp).
+  if (!abreModal && !interaction.deferred && !interaction.replied) {
+    try {
+      await interaction.deferUpdate();
+    } catch (erro) {
+      console.error(`[botoes] não consegui confirmar o clique em ${interaction.customId}:`, erro.message);
+    }
+  }
+
   try {
     switch (acao) {
       case 'entrar':
@@ -247,13 +262,12 @@ async function handleBotao(interaction, ctx) {
           return true;
         }
         const time = Number(args[1]);
-        await interaction.deferReply({ flags: 64 }).catch(() => {});
         const resultado = await fluxo.encerrarPartida(client, db, {
           partidaId: args[0],
           vencedorTime: time,
           autorId: interaction.user.id,
         });
-        await interaction.editReply({
+        await responderPrivado(interaction, {
           content: `🏆 **${fluxo.nomeTime(time)}** venceu o AP de ${reais(resultado.partida.preco)}. Resultado salvo!`,
         });
         return true;
@@ -265,13 +279,12 @@ async function handleBotao(interaction, ctx) {
           return true;
         }
         const ausente = Number(args[1]);
-        await interaction.deferReply({ flags: 64 }).catch(() => {});
         const resultado = await fluxo.aplicarWO(client, db, {
           partidaId: args[0],
           timeAusente: ausente,
           autorId: interaction.user.id,
         });
-        await interaction.editReply({
+        await responderPrivado(interaction, {
           content:
             `⚠️ W.O. aplicado.\n**${fluxo.nomeTime(ausente)}** não apareceu — vitória de ` +
             `**${fluxo.nomeTime(resultado.partida.vencedor_time)}** (${reais(resultado.partida.preco)}).`,
@@ -351,17 +364,16 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'ticket': {
-        await interaction.deferReply({ flags: 64 }).catch(() => {});
         try {
           const aberto = await tickets.abrirTicket(interaction, { db, client, tipo: args[0] });
-          await interaction.editReply({
+          await responderPrivado(interaction, {
             content: aberto.existente
               ? `🎫 Você já tem um ticket aberto: ${aberto.canal}.`
               : `🎫 Ticket aberto: ${aberto.canal}. A staff já foi avisada.`,
           });
         } catch (erro) {
           console.error('[botoes] ticket:', erro.message);
-          await interaction.editReply({ content: '❌ Não consegui abrir o ticket. Chame um ADM.' });
+          await responderErro(interaction, '❌ Não consegui abrir o ticket. Chame um ADM.').catch(() => {});
         }
         return true;
       }
@@ -412,7 +424,10 @@ async function handleBotao(interaction, ctx) {
     }
   } catch (erro) {
     console.error(`[botoes] erro em ${interaction.customId}:`, erro);
-    await responderErro(interaction, erro.message || 'Deu um erro aqui. Tente de novo ou chame um ADM.');
+    await responderErro(
+      interaction,
+      erro.message || 'Deu um erro aqui. Tente de novo ou chame um ADM.',
+    ).catch(() => {});
     return true;
   }
 }
