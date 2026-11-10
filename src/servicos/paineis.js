@@ -1,21 +1,26 @@
 'use strict';
 
-/** Painéis de AP: embed da fila, menu de preços, botões de gelo e gravação do painel. */
+/**
+ * Painéis de AP: um card por faixa de aposta, do menor (R$ 0,50, no topo) para
+ * o maior (R$ 100,00, no fundo), menu de valores e botões específicos por
+ * categoria (mobile, emu, full capa e misto).
+ */
 
 const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config');
 const { embed, reais, listaUsuarios } = require('../util/embeds');
 const filasServico = require('./filas');
 
+/** Card de um valor: mostra cada tipo de entrada com quantos já estão na fila. */
 function linhaDePreco(modo, preco, entradas) {
   const doPreco = entradas.filter((linha) => Number(linha.preco) === preco);
-  const infinito = doPreco.filter((linha) => linha.gelo === 'infinito').map((linha) => linha.user_id);
-  const normal = doPreco.filter((linha) => linha.gelo === 'normal').map((linha) => linha.user_id);
+  const variantes = config.variantesDoModo(modo).map((variante) => {
+    const ids = doPreco.filter((linha) => linha.gelo === variante.id).map((linha) => linha.user_id);
+    return `${variante.emoji} **${variante.nome}** (${ids.length}/${modo.jogadores}): ${listaUsuarios(ids)}`;
+  });
   return {
-    name: `${reais(preco)} · ${doPreco.length} na fila`,
-    value:
-      `🧊 **Gelo Infinito** (${infinito.length}/${modo.jogadores}): ${listaUsuarios(infinito)}\n` +
-      `🧊 **Gelo Normal** (${normal.length}/${modo.jogadores}): ${listaUsuarios(normal)}`,
+    name: `💵 ${reais(preco)} · ${doPreco.length} na fila`,
+    value: variantes.join('\n') || '`fila vazia`',
     inline: false,
   };
 }
@@ -23,9 +28,9 @@ function linhaDePreco(modo, preco, entradas) {
 function embedPainel(modo, entradas = []) {
   return embed(`🎯 AP ${modo.titulo}`, [
     `**Modo:** ${modo.titulo}   ·   **Fecha com:** ${modo.jogadores} jogadores (${modo.time}x${modo.time})`,
-    `**Apostas:** ${config.PRECOS.map(reais).join(' · ')}`,
+    `**Cards:** de ${reais(config.PRECOS[0])} (topo) até ${reais(config.PRECOS[config.PRECOS.length - 1])} (fundo).`,
     '',
-    '**Como entrar:** escolha a faixa de aposta no menu abaixo e depois o tipo de gelo.',
+    '**Como entrar:** escolha o valor no menu abaixo e depois o botão da sua categoria.',
     'Quando o grupo fecha, o bot abre uma **sala privada** com a regra, o mediador e o PIX.',
   ].join('\n'), {
     cor: config.CORES.principal,
@@ -34,6 +39,7 @@ function embedPainel(modo, entradas = []) {
   });
 }
 
+/** Menu com todos os valores + Sair + Como funciona (ranking é comando separado). */
 function componentesPainel(modo) {
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`ap:preco:${modo.id}`)
@@ -46,48 +52,62 @@ function componentesPainel(modo) {
       })),
     );
 
-  const botoes = new ActionRowBuilder().addComponents(
+  const botoes = [
     new ButtonBuilder()
       .setCustomId(`ap:sair:${modo.id}:todos`)
       .setLabel('Sair da Fila')
       .setEmoji('❌')
       .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId('ap:ranking')
-      .setLabel('Ranking')
-      .setEmoji('🏆')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('ap:como')
-      .setLabel('Como funciona')
-      .setEmoji('❓')
-      .setStyle(ButtonStyle.Secondary),
-  );
+  ];
+  if (config.mostrarComoFunciona(modo)) {
+    botoes.push(
+      new ButtonBuilder()
+        .setCustomId('ap:como')
+        .setLabel('Como funciona')
+        .setEmoji('❓')
+        .setStyle(ButtonStyle.Secondary),
+    );
+  }
 
-  return [new ActionRowBuilder().addComponents(menu), botoes];
+  return [new ActionRowBuilder().addComponents(menu), new ActionRowBuilder().addComponents(...botoes)];
 }
 
-/** Botões que aparecem para quem escolheu um preço (só a pessoa vê). */
-function componentesGelo(modo, preco) {
-  return [
-    new ActionRowBuilder().addComponents(
+/**
+ * Botões do card, conforme a categoria do canal:
+ *  mobile   → Gelo Infinito · Gelo Normal · Sair · Como funciona
+ *  emu      → Normal · Full UMP e XM8 · Sair · Como funciona
+ *  fullcapa → Full Capa · Sair · Como funciona
+ *  misto    → 1 Emu (2 Emu, 3 Emu conforme o time) · Sair  (sem "Como funciona")
+ */
+function componentesEntrada(modo, preco) {
+  const estilos = [ButtonStyle.Primary, ButtonStyle.Success, ButtonStyle.Secondary];
+  const botoes = config.variantesDoModo(modo).map((variante, indice) =>
+    new ButtonBuilder()
+      .setCustomId(`ap:entrar:${modo.id}:${preco}:${variante.id}`)
+      .setLabel(variante.nome)
+      .setEmoji(variante.emoji)
+      .setStyle(estilos[indice] || ButtonStyle.Secondary),
+  );
+
+  botoes.push(
+    new ButtonBuilder()
+      .setCustomId(`ap:sair:${modo.id}:${preco}`)
+      .setLabel('Sair')
+      .setEmoji('❌')
+      .setStyle(ButtonStyle.Danger),
+  );
+
+  if (config.mostrarComoFunciona(modo)) {
+    botoes.push(
       new ButtonBuilder()
-        .setCustomId(`ap:gelo:${modo.id}:${preco}:infinito`)
-        .setLabel('Gelo Infinito')
-        .setEmoji('🧊')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`ap:gelo:${modo.id}:${preco}:normal`)
-        .setLabel('Gelo Normal')
-        .setEmoji('🧊')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`ap:sair:${modo.id}:${preco}`)
-        .setLabel('Sair da Fila')
-        .setEmoji('❌')
-        .setStyle(ButtonStyle.Danger),
-    ),
-  ];
+        .setCustomId('ap:como')
+        .setLabel('Como funciona')
+        .setEmoji('❓')
+        .setStyle(ButtonStyle.Secondary),
+    );
+  }
+
+  return [new ActionRowBuilder().addComponents(...botoes)];
 }
 
 function mensagemPainel(modo, entradas) {
@@ -138,7 +158,8 @@ async function atualizar(client, db, { guildId, modo }) {
 module.exports = {
   embedPainel,
   componentesPainel,
-  componentesGelo,
+  componentesEntrada,
+  componentesGelo: componentesEntrada,
   mensagemPainel,
   salvar,
   obter,

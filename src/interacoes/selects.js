@@ -1,6 +1,6 @@
 'use strict';
 
-/** Menu de preços: mostra os botões de gelo só para quem escolheu a faixa. */
+/** Menu de valores: mostra o card com os botões da categoria só para quem escolheu. */
 
 const config = require('../config');
 const filas = require('../servicos/filas');
@@ -25,23 +25,24 @@ async function handleSelect(interaction, ctx) {
   }
 
   const entradas = filas.listar(ctx.db, { guildId: interaction.guildId, modo: modo.id, preco });
-  const infinito = entradas.filter((linha) => linha.gelo === 'infinito').map((linha) => linha.user_id);
-  const normal = entradas.filter((linha) => linha.gelo === 'normal').map((linha) => linha.user_id);
+  const linhas = config.variantesDoModo(modo).map((variante) => {
+    const ids = entradas.filter((linha) => linha.gelo === variante.id).map((linha) => linha.user_id);
+    return `${variante.emoji} **${variante.nome}** (${ids.length}/${modo.jogadores}): ${listaUsuarios(ids)}`;
+  });
 
   const descricao = [
     `**Modo:** ${modo.titulo}`,
     `**Aposta:** ${reais(preco)} por jogador`,
     `**Fecha com:** ${modo.jogadores} jogadores`,
     '',
-    `🧊 **Gelo Infinito** (${infinito.length}/${modo.jogadores}): ${listaUsuarios(infinito)}`,
-    `🧊 **Gelo Normal** (${normal.length}/${modo.jogadores}): ${listaUsuarios(normal)}`,
+    ...linhas,
     '',
-    'Escolha o tipo de gelo para entrar:',
+    'Escolha o botão da sua categoria para entrar:',
   ].join('\n');
 
   await responderPrivado(interaction, {
     embeds: [embed(`🎯 AP ${modo.titulo} · ${reais(preco)}`, descricao, { cor: config.CORES.gelo })],
-    components: paineis.componentesGelo(modo, preco),
+    components: paineis.componentesEntrada(modo, preco),
   });
   return true;
 }
