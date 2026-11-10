@@ -102,9 +102,8 @@ const comandos = [
         '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot`',
       ].join('\n');
 
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [embed('❓ Central de ajuda · ORG Royal AP', corpo, { cor: config.CORES.principal, rodape: 'ORG Royal AP' })],
-        flags: 64,
       });
     },
   },
@@ -126,7 +125,7 @@ const comandos = [
         new ButtonBuilder().setCustomId('ap:central').setLabel('Central de atendimento').setEmoji('🎫').setStyle(ButtonStyle.Secondary),
       );
 
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [
           embed('🎛️ Painel geral · ORG Royal AP', 'Controle rápido do servidor. Use os botões abaixo.', {
             cor: config.CORES.principal,
@@ -139,7 +138,6 @@ const comandos = [
           }),
         ],
         components: [botoes],
-        flags: 64,
       });
     },
   },
@@ -152,9 +150,8 @@ const comandos = [
     async executar(interaction) {
       // A abertura direta foi desativada de propósito. A função continua guardada
       // em servicos/tickets.js (abrirTicket) para quando precisar de novo.
-      return interaction.reply({
+      return responderPrivado(interaction, {
         content: 'Use o comando `/ticket` para abrir a Central de Atendimento.',
-        flags: 64,
       });
     },
   },
@@ -165,10 +162,9 @@ const comandos = [
       .setDescription('Abre a Central de Atendimento (painel temporário, só você vê)'),
 
     async executar(interaction) {
-      await interaction.reply({
+      await responderPrivado(interaction, {
         embeds: [tickets.embedCentral()],
         components: tickets.componentesCentral(),
-        flags: 64,
       });
 
       // O painel se apaga sozinho em 15 segundos para não poluir o canal.
@@ -239,7 +235,7 @@ const comandos = [
         const memoria = Math.round(process.memoryUsage().rss / 1024 / 1024);
         const horas = (process.uptime() / 3600).toFixed(1);
 
-        return interaction.reply({
+        return responderPrivado(interaction, {
           embeds: [
             embed('🤖 Status do bot', 'Tudo certo por aqui.', {
               cor: config.CORES.sucesso,
@@ -257,7 +253,6 @@ const comandos = [
               rodape: 'ORG Royal AP',
             }),
           ],
-          flags: 64,
         });
       }
 
@@ -332,7 +327,7 @@ const comandos = [
     data: new SlashCommandBuilder().setName('ssmob').setDescription('Regras e checklist de mobile (anti-trapaça)'),
 
     async executar(interaction) {
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [
           embed(
             '📱 Verificação · Mobile',
@@ -348,7 +343,6 @@ const comandos = [
             { cor: config.CORES.gelo, rodape: 'ORG Royal AP' },
           ),
         ],
-        flags: 64,
       });
     },
   },
@@ -357,7 +351,7 @@ const comandos = [
     data: new SlashCommandBuilder().setName('ssemu').setDescription('Regras e checklist de emulador'),
 
     async executar(interaction) {
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [
           embed(
             '🖥️ Verificação · Emulador',
@@ -373,7 +367,6 @@ const comandos = [
             { cor: config.CORES.principal, rodape: 'ORG Royal AP' },
           ),
         ],
-        flags: 64,
       });
     },
   },
@@ -386,7 +379,7 @@ const comandos = [
         new ButtonBuilder().setCustomId('ap:aux').setLabel('Falar com a staff').setEmoji('🎫').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('ap:como').setLabel('Como funciona o AP').setEmoji('❓').setStyle(ButtonStyle.Secondary),
       );
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [
           embed(
             '🧰 Ferramentas · Emulador',
@@ -403,7 +396,6 @@ const comandos = [
           ),
         ],
         components: [botoes],
-        flags: 64,
       });
     },
   },
