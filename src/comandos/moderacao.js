@@ -106,7 +106,6 @@ const comandos = [
         return responderErro(interaction, 'Você precisa da permissão **Gerenciar Mensagens**.');
       }
       const quantidade = Math.min(interaction.options.getInteger('quantidade'), config.LIMITES.MENSAGENS_LIMPAR);
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
       try {
         const apagadas = await interaction.channel.bulkDelete(quantidade, true);
         return interaction.editReply({
@@ -165,7 +164,6 @@ const comandos = [
       if (!(await exigirStaff(interaction))) return;
       const alvo = interaction.options.getUser('usuario');
       const mensagem = interaction.options.getString('mensagem');
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
 
       try {
         await alvo.send({
@@ -231,7 +229,6 @@ const comandos = [
         });
       }
 
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
       let enviadas = 0;
       let falhas = 0;
       for (const membro of alvos) {
