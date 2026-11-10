@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 45 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 48 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -102,9 +102,10 @@ Mencionar Everyone · Anexar Arquivos.
 1. `/boombot setcategoria categoria:#filas aqui` — onde as salas privadas nascem.
 2. `/logs canal:#logs-royal` — canal de auditoria.
 3. Cada mediador roda `/registrar_pix chave:SuaChave titular:SeuNome` — **sem PIX ninguém assume sala**.
-4. Publique os 15 painéis, **um em cada canal**:
+4. `/ticketfixo` no canal de atendimento — publica a Central de Atendimento permanente.
+5. Publique os 15 painéis, **um em cada canal**:
    `/filasx1mobile` no canal 1x1 mobile, `/filasx2mobile` no 2x2 mobile, … `/filasx4misto` no 4x4 misto.
-5. Deixe o cargo **Mediador** com acesso aos canais de AP (o bot também libera na sala criada).
+6. Deixe o cargo **Mediador** com acesso aos canais de AP (o bot também libera na sala criada).
 
 ---
 
@@ -115,8 +116,8 @@ Mencionar Everyone · Anexar Arquivos.
    de filas, só com os jogadores + staff.
 3. Um jogador clica em **📜 Enviar regra** e escreve a regra; todos clicam em **✅ Confirmar Regras**.
 4. O bot marca o cargo Mediador. Um mediador clica em **👑 Assumir sala**.
-5. **💸 Enviar PIX** → a chave cadastrada aparece na sala e na DM dos jogadores. O mediador confere os
-   comprovantes e clica em **✅ Pagamento recebido**.
+5. **💸 Enviar PIX** (botão) ou **`/pix`** na sala → a chave cadastrada aparece na sala e na DM dos
+   jogadores. O mediador confere os comprovantes e clica em **✅ Pagamento recebido**.
 6. **🎮 Liberar sala** → o mediador digita ID e senha; o bot publica para os jogadores.
 7. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
    comissão do mediador e auditoria.
@@ -126,14 +127,27 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 
 ---
 
-## 6. Comandos (45)
+## 6. Comandos (48)
 
-**Painéis de AP (15)** — publicam o painel no canal atual:
+**Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
 `/filasx1mobile` `/filasx2mobile` `/filasx3mobile` `/filasx4mobile`
 `/filasx1fullcapa` `/filasx2fullcapa` `/filasx3fullcapa` `/filasx4fullcapa`
 `/filasx1emu` `/filasx2emu` `/filasx3emu` `/filasx4emu`
 `/filasx2misto` `/filasx3misto` `/filasx4misto`
+
+Cada painel mostra **14 cards**, do **R$ 0,50 no topo** ao **R$ 100,00 no fundo**, e os botões mudam conforme a categoria do canal:
+
+| Categoria | Botões do card |
+|---|---|
+| Mobile | 🧊 Gelo Infinito · 🧊 Gelo Normal · ❌ Sair · ❓ Como funciona |
+| Emulador | ✔️ Normal · 🔫 Full UMP e XM8 · ❌ Sair · ❓ Como funciona |
+| Full Capa | 🎯 Full Capa · ❌ Sair · ❓ Como funciona |
+| Misto 2x2 | 🎮 1 Emu · ❌ Sair |
+| Misto 3x3 | 🎮 1 Emu · 🎮 2 Emu · ❌ Sair |
+| Misto 4x4 | 🎮 1 Emu · 🎮 2 Emu · 🎮 3 Emu · ❌ Sair |
+
+O ranking **não** fica dentro dos painéis: é o comando separado `/ranking`.
 
 **Jogador**
 
@@ -144,7 +158,9 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 | `/apostas [usuario]` | Histórico das últimas apostas |
 | `/convites [usuario]` | Ranking de convites |
 | `/ajuda` | Explica o fluxo e os comandos |
-| `/aux [motivo]` | Abre ticket de suporte |
+| `/aux` | Reservado: só avisa para usar `/ticket` |
+| `/ticket` | Central de Atendimento só para você, que se apaga em 15 segundos |
+| `/ticketfixo` | Publica a Central de Atendimento fixa no canal (só ADM) |
 | `/ssmob` `/ssemu` `/temu` | Regras de mobile/emulador e ferramentas |
 
 **Staff / mediador**
@@ -152,6 +168,7 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 | Comando | Para que serve |
 |---|---|
 | `/registrar_pix chave: [titular:] [comissao:]` | Salva sua chave PIX de mediador |
+| `/pix` | Envia sua chave na sala do AP que você está mediando |
 | `/painel_mediador` | Painel de controle da moderação |
 | `/vencedor time: [partida:]` | Declara o vencedor e fecha a aposta |
 | `/wo ausente: [partida:]` | Aplica W.O. |
@@ -176,7 +193,7 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 
 ```
 index.js                      → entrada: valida .env, abre banco, conecta
-src/config.js                 → 15 modos, 13 faixas de preço, cores, limites
+src/config.js                 → 15 modos, 14 faixas de preço, botões por categoria
 src/db/esquema.js             → esquema SQLite (12 tabelas)
 src/db/index.js               → conexão, criação e configurações por servidor
 src/util/embeds.js            → embeds, formatação de R$, datas
@@ -186,7 +203,8 @@ src/servicos/staff.js         → PIX, comissão, relatório de receita
 src/servicos/filas.js         → entrar/sair/listar/reservar grupo (transação)
 src/servicos/partidas.js      → criação, regras, mediação, pagamento, resultado
 src/servicos/paineis.js       → embed + menu + botões de gelo
-src/servicos/fluxo.js         → fluxo do AP e canal privado no Discord
+src/servicos/fluxo.js         → fluxo do AP, canal privado e envio do PIX
+src/servicos/tickets.js       → Central de Atendimento (5 setores e boas-vindas)
 src/servicos/auditoria.js     → log no banco + canal de logs
 src/servicos/blacklist.js     → lista negra
 src/servicos/convites.js      → contagem de convites
@@ -209,8 +227,8 @@ npm test
 
 Os testes criam um banco temporário e um Discord falso em memória. Cobrem: esquema do banco, moedas e
 giros, fila (entrada, saída, reserva atômica), partida completa (regras → mediador → pagamento →
-sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 45 comandos e
-os handlers de `/registrar_pix`, `/ajuda`, `/perfil`, `/loja` e `/boombot`.
+sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 48 comandos, os tickets e
+os handlers de `/registrar_pix`, `/ajuda`, `/perfil`, `/loja`, `/pix` e `/boombot`.
 
 ---
 
@@ -244,7 +262,7 @@ No Termux, use `termux-wake-lock` antes de `npm start` para o Android não pausa
 | `não consegui criar a sala privada` | Dê ao bot **Gerenciar Canais** e **Gerenciar Cargos**, e defina a categoria com `/boombot setcategoria` |
 | Mediador não consegue assumir | Ele precisa de cargo de staff/mediador **e** `/registrar_pix` |
 | PIX não aparece | O mediador precisa ter rodado `/registrar_pix`; o botão só funciona para quem assumiu |
-| Ranking zerado | Confira se está rodando na mesma pasta onde está `database/royal.db` |
+| Ranking zerado | Confira se est�� rodando na mesma pasta onde está `database/royal.db` |
 | `Nenhum motor de SQLite disponível` | Atualize o Node para 22.13+ ou rode `npm install better-sqlite3` |
 | `/envio_massa` não acha membros | Server Members Intent ligado + reiniciar o bot |
 
