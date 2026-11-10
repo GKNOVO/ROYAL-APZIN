@@ -81,7 +81,9 @@ function montar(client, db) {
           embeds: [embedErro('Deu um erro aqui. A staff já foi avisada — tente de novo em alguns segundos.')],
           flags: EFEMERO,
         };
-        if (interaction.deferred || interaction.replied) await interaction.followUp(aviso);
+        // Comando já adiado → edita a mensagem "pensando" (não deixa fantasma).
+        if (interaction.deferred && interaction.isChatInputCommand?.()) await interaction.editReply(aviso);
+        else if (interaction.deferred || interaction.replied) await interaction.followUp(aviso);
         else await interaction.reply(aviso);
       } catch {
         /* se nem isso funcionar, o log acima já registrou */

@@ -8,7 +8,7 @@ const usuarios = require('../servicos/usuarios');
 const staff = require('../servicos/staff');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
-const { responderPrivado } = require('../util/seguranca');
+const { responderPrivado, responder } = require('../util/seguranca');
 const { embed, reais, numeroBR, dataBR, mencao } = require('../util/embeds');
 
 const comandos = [
@@ -59,7 +59,7 @@ const comandos = [
         });
       }
 
-      return interaction.reply({
+      return responderPrivado(interaction, {
         embeds: [
           embed(`📊 Perfil de ${alvo.username}`, `Membro ${mencao(alvo.id)} · ${resumo.total} AP(s) jogados`, {
             cor: config.CORES.ouro,
@@ -68,7 +68,6 @@ const comandos = [
             rodape: 'ORG Royal AP',
           }),
         ],
-        flags: 64,
       });
     },
   },
@@ -109,7 +108,7 @@ const comandos = [
         : 'Ainda não tem ninguém no ranking. Publiquem os painéis e comecem os APs!';
       const titulo =
         tipo === 'coins' ? '💰 Ranking de moedas' : tipo === 'giros' ? '🎰 Ranking de giros' : '🏆 Ranking de vitórias';
-      return interaction.reply({ embeds: [embed(titulo, corpo, { rodape: 'ORG Royal AP' })] });
+      return responder(interaction, { embeds: [embed(titulo, corpo, { rodape: 'ORG Royal AP' })] });
     },
   },
 
@@ -170,7 +169,9 @@ const comandos = [
         ? lista.map((linha, indice) => `**${indice + 1}.** ${mencao(linha.convidador_id)} — ${linha.total} convite(s)`).join('\n')
         : 'Ainda não registrei convites. Eu conto a partir do momento em que o bot ficou online.';
 
-      return interaction.reply({ embeds: [embed('📨 Ranking de convites', corpo, { rodape: 'ORG Royal AP' })] });
+      return responderPrivado(interaction, {
+        embeds: [embed('📨 Ranking de convites', corpo, { rodape: 'ORG Royal AP' })],
+      });
     },
   },
 ];
