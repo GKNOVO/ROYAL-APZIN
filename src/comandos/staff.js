@@ -13,7 +13,15 @@ const staff = require('../servicos/staff');
 const partidas = require('../servicos/partidas');
 const usuarios = require('../servicos/usuarios');
 const auditoria = require('../servicos/auditoria');
-const { exigirStaff, exigirMediador, responderPrivado, responderErro } = require('../util/seguranca');
+const fluxo = require('../servicos/fluxo');
+const {
+  exigirStaff,
+  exigirMediador,
+  ehAdmin,
+  ehMediador,
+  responderPrivado,
+  responderErro,
+} = require('../util/seguranca');
 const { embed, embedSucesso, reais, numeroBR, mencao, dataBR } = require('../util/embeds');
 
 const DIA = 24 * 60 * 60 * 1000;
@@ -69,6 +77,65 @@ const comandos = [
 
   {
     data: new SlashCommandBuilder()
+      .setName('pix')
+      .setDescription('Envia sua chave PIX na sala de AP que você está mediando'),
+
+    async executar(interaction, { db, client }) {
+      if (!ehMediador(interaction.member) && !ehAdmin(interaction.member)) {
+        return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
+      }
+
+      const partida = db
+        .prepare(
+          `SELECT * FROM partidas
+            WHERE guild_id = ? AND canal_id = ? AND status IN ('aguardando_pagamento', 'pago')
+            ORDER BY id DESC LIMIT 1`,
+        )
+        .get(String(interaction.guildId), String(interaction.channelId));
+
+      if (!partida) {
+        return responderErro(
+          interaction,
+          'Use este comando **dentro do canal da sala**, depois que as regras forem confirmadas.',
+        );
+      }
+
+      const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+      if (!registro?.pix_chave) {
+        return responderErro(
+          interaction,
+          'Cadastre sua chave primeiro: `/registrar_pix chave:SuaChave`.',
+        );
+      }
+
+      if (partida.mediador_id && partida.mediador_id !== interaction.user.id && !ehAdmin(interaction.member)) {
+        return responderErro(interaction, 'Essa sala é de outro mediador.');
+      }
+
+      try {
+        await fluxo.anunciarPix(client, db, {
+          partidaId: partida.id,
+          mediadorId: interaction.user.id,
+          chave: registro.pix_chave,
+          titular: registro.pix_titular,
+        });
+        await auditoria.registrar(db, client, {
+          guildId: interaction.guildId,
+          autorId: interaction.user.id,
+          acao: 'PIX enviado na sala',
+          detalhe: `Sala ${partida.id} · ${registro.pix_chave}`,
+        });
+        return responderPrivado(interaction, {
+          embeds: [embedSucesso('PIX enviado na sala e na DM dos jogadores. Confira os comprovantes.')],
+        });
+      } catch (erro) {
+        return responderErro(interaction, erro.message);
+      }
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
       .setName('receita_mediadores')
       .setDescription('Relatório de comissões dos mediadores')
       .addIntegerOption((opcao) =>
@@ -119,11 +186,11 @@ const comandos = [
         [
           '**Rotina de uma sala:**',
           '1. Assuma a sala pelo botão **Assumir sala** dentro do canal do AP.',
-          '2. Clique em **Enviar PIX** para mandar sua chave e confira os comprovantes.',
+          '2. Clique em **Enviar PIX** (ou use `/pix` na sala) e confira os comprovantes.',
           '3. Clique em **Pagamento recebido** e depois em **Liberar sala** com o ID e a senha.',
           '4. No fim, declare o vencedor pelo botão ou com `/vencedor`.',
           '',
-          '**Comandos úteis:** `/vencedor` · `/wo` · `/registrar_pix` · `/receita_mediadores` · `/aux`',
+          '**Comandos úteis:** `/vencedor` · `/wo` · `/registrar_pix` · `/pix` · `/receita_mediadores` · `/ticket`',
         ].join('\n'),
         {
           cor: config.CORES.principal,
