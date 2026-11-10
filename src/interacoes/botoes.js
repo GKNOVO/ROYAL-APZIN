@@ -368,12 +368,15 @@ async function handleBotao(interaction, ctx) {
           const aberto = await tickets.abrirTicket(interaction, { db, client, tipo: args[0] });
           await responderPrivado(interaction, {
             content: aberto.existente
-              ? `🎫 Você já tem um ticket aberto: ${aberto.canal}.`
-              : `🎫 Ticket aberto: ${aberto.canal}. A staff já foi avisada.`,
+              ? `🎫 Seu ticket já está aberto: ${aberto.link}\nContinue o atendimento por lá.`
+              : `✅ Seu ticket foi criado com sucesso! Acesse: ${aberto.link}`,
           });
         } catch (erro) {
           console.error('[botoes] ticket:', erro.message);
-          await responderErro(interaction, '❌ Não consegui abrir o ticket. Chame um ADM.').catch(() => {});
+          await responderErro(
+            interaction,
+            '❌ Não consegui abrir o ticket. Chame um ADM (confira a categoria de tickets e a permissão **Gerenciar Canais**).',
+          ).catch(() => {});
         }
         return true;
       }

@@ -7,7 +7,6 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  PermissionFlagsBits,
   SlashCommandBuilder,
 } = require('discord.js');
 const config = require('../config');
@@ -15,68 +14,9 @@ const { obterConfig, definirConfig } = require('../db');
 const filas = require('../servicos/filas');
 const partidas = require('../servicos/partidas');
 const paineis = require('../servicos/paineis');
-const fluxo = require('../servicos/fluxo');
 const tickets = require('../servicos/tickets');
-const auditoria = require('../servicos/auditoria');
 const { exigirStaff, exigirAdmin, responderPrivado, responderErro } = require('../util/seguranca');
-const { embed, embedSucesso, mencao, dataBR } = require('../util/embeds');
-
-async function abrirTicket(interaction, { db, client, motivo = 'suporte' }) {
-  const guild = interaction.guild;
-  const categoria = await fluxo.resolverCategoria(guild, db, 'categoria_suporte', config.CATEGORIA_SUPORTE_ID);
-  const A = PermissionFlagsBits;
-
-  const permissoes = [
-    { id: guild.roles.everyone.id, deny: [A.ViewChannel] },
-    {
-      id: client.user.id,
-      allow: [A.ViewChannel, A.SendMessages, A.EmbedLinks, A.ReadMessageHistory, A.ManageChannels],
-    },
-    {
-      id: interaction.user.id,
-      allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.AttachFiles],
-    },
-  ];
-  for (const cargo of [config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID, config.CARGO_ADMIN_ID]) {
-    if (cargo) permissoes.push({ id: cargo, allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory] });
-  }
-
-  const canal = await guild.channels.create({
-    name: `suporte-${interaction.user.username}`.toLowerCase().slice(0, 90),
-    type: ChannelType.GuildText,
-    ...(categoria ? { parent: categoria.id } : {}),
-    topic: `Ticket de ${interaction.user.tag} · ${motivo}`,
-    permissionOverwrites: permissoes,
-  });
-
-  await canal.send({
-    content: `${mencao(interaction.user.id)} — ticket aberto (${motivo}). A staff da ORG Royal AP já foi avisada.`,
-    embeds: [
-      embed(
-        '🎫 Ticket aberto',
-        'Explique o que aconteceu com o máximo de detalhe possível:\n' +
-          '• ID da sala / print do AP\n• Nick no Free Fire\n• Horário do ocorrido\n\n' +
-          'Assim que resolver, a staff fecha o ticket.',
-        { rodape: 'ORG Royal AP' },
-      ),
-    ],
-    allowedMentions: { parse: ['users'] },
-  });
-
-  const botoes = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ap:fecharticket').setLabel('Fechar ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger),
-  );
-  await canal.send({ components: [botoes] });
-
-  await auditoria.registrar(db, client, {
-    guildId: guild.id,
-    autorId: interaction.user.id,
-    acao: 'Ticket aberto',
-    detalhe: `${canal.name} · ${motivo}`,
-  });
-
-  return canal;
-}
+const { embed, embedSucesso, dataBR } = require('../util/embeds');
 
 const comandos = [
   {
@@ -169,7 +109,10 @@ const comandos = [
 
       // O painel se apaga sozinho em 15 segundos para não poluir o canal.
       const expira = setTimeout(() => {
-        interaction.deleteReply().catch(() => {});
+        // deleteReply nem sempre existe (interação antiga): nunca deixa erro solto.
+        Promise.resolve()
+          .then(() => interaction.deleteReply())
+          .catch(() => {});
       }, 15000);
       if (typeof expira.unref === 'function') expira.unref();
       interaction.__expiraTicket = expira;
@@ -401,4 +344,4 @@ const comandos = [
   },
 ];
 
-module.exports = { comandos, abrirTicket };
+module.exports = { comandos };

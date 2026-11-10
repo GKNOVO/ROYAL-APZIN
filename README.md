@@ -67,7 +67,7 @@ serviço não entra mais em timeout.
    - **Start Command:** `npm start`
    - **Instance Type:** `Free`
 4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
-   `CATEGORIA_FILAS_ID`, `CATEGORIA_SUPORTE_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
+   `CATEGORIA_FILAS_ID`, `CATEGORY_TICKETS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
    `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
    Não precisa criar `PORT`: o Render injeta essa variável sozinho.
 5. **Create Web Service**. Nos logs deve aparecer:
@@ -116,7 +116,7 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `DATABASE_PATH` | não | Onde fica o banco | `database/royal.db` |
 | `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
 | `CATEGORIA_FILAS_ID` | recomendado | Categoria onde as salas privadas de AP são criadas | `111222333444555666` |
-| `CATEGORIA_SUPORTE_ID` | opcional | Categoria dos tickets (`/aux`) | `111222333444555777` |
+| `CATEGORY_TICKETS_ID` | opcional | Categoria onde os tickets são criados | `111222333444555777` |
 | `CARGO_ADMIN_ID` | recomendado | Quem manda em tudo | ID do cargo ADM |
 | `CARGO_STAFF_ID` | recomendado | Staff (pode publicar painel, ver salas, usar comandos de staff) | ID do cargo Staff |
 | `CARGO_MEDIADOR_ID` | **importante** | Cargo marcado quando uma sala precisa de mediador | ID do cargo Mediador |
@@ -158,6 +158,10 @@ Mencionar Everyone · Anexar Arquivos.
 5. Publique os 15 painéis, **um em cada canal**:
    `/filasx1mobile` no canal 1x1 mobile, `/filasx2mobile` no 2x2 mobile, … `/filasx4misto` no 4x4 misto.
 6. Deixe o cargo **Mediador** com acesso aos canais de AP (o bot também libera na sala criada).
+
+> **Categoria dos tickets:** o bot cria o canal dentro da categoria de `CATEGORY_TICKETS_ID`
+> (o nome antigo `CATEGORIA_SUPORTE_ID` continua aceito). Sem nenhuma das duas, ele procura
+> uma categoria com nome de atendimento/suporte — e **nunca** usa a categoria das filas.
 
 ---
 
@@ -315,7 +319,7 @@ No Termux, use `termux-wake-lock` antes de `npm start` para o Android não pausa
 | `não consegui criar a sala privada` | Dê ao bot **Gerenciar Canais** e **Gerenciar Cargos**, e defina a categoria com `/boombot setcategoria` |
 | Mediador não consegue assumir | Ele precisa de cargo de staff/mediador **e** `/registrar_pix` |
 | PIX não aparece | O mediador precisa ter rodado `/registrar_pix`; o botão só funciona para quem assumiu |
-| Ranking zerado | Confira se está rodando na mesma pasta onde está `database/royal.db` |
+| Ranking zerado | Confira se est�� rodando na mesma pasta onde está `database/royal.db` |
 | `Nenhum motor de SQLite disponível` | Atualize o Node para 22.13+ ou rode `npm install better-sqlite3` |
 | `/envio_massa` não acha membros | Server Members Intent ligado + reiniciar o bot |
 

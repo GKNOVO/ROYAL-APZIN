@@ -663,19 +663,70 @@ function resposta(interaction) {
     assert.strictEqual(canalFixo.enviadas[0].components[0].toJSON().components.length, 5);
     passar('/ticketfixo: publica a Central de Atendimento permanente');
 
-    // Abertura de ticket: canal privado + boas-vindas do setor
+    // Abertura de ticket: canal privado DENTRO da categoria configurada
     const { client: clientTicket, guild: guildTicket } = ambienteFalso();
+    const categoriaTickets = { id: 'cat-tickets', name: 'ATENDIMENTO', type: ChannelType.GuildCategory };
+    guildTicket.channels.cache.set(categoriaTickets.id, categoriaTickets);
+    guildTicket.channels.fetch = async (id) => guildTicket.channels.cache.get(id) ?? null;
+
+    const cfg = require('../src/config');
+    const categoriaAntiga = cfg.CATEGORY_TICKETS_ID;
+    cfg.CATEGORY_TICKETS_ID = 'cat-tickets';
+
     const aberto = await tickets.abrirTicket(
       { guild: guildTicket, guildId: 'g1', user: { id: 'j9', username: 'jogador9', tag: 'jogador9#1' } },
       { db, client: clientTicket, tipo: 'vagas' },
     );
+    cfg.CATEGORY_TICKETS_ID = categoriaAntiga;
+
     assert.strictEqual(aberto.canal.name, 'vagas-jogador9');
     assert.strictEqual(aberto.existente, false);
-    const boasVindas = aberto.canal.enviadas[0].payload.embeds[0].toJSON();
-    assert.ok(boasVindas.description.includes('Free Fire'));
-    assert.ok(boasVindas.description.includes('Nick'));
-    assert.ok(boasVindas.description.toLowerCase().includes('atividade'));
-    passar('ticket: canal privado criado com boas-vindas de vagas');
+    assert.strictEqual(aberto.canal.parentId, 'cat-tickets', 'canal criado dentro da categoria de tickets');
+    assert.strictEqual(aberto.link, `<#${aberto.canal.id}>`);
+    const boasVindas = aberto.canal.enviadas[0].payload;
+    assert.ok(boasVindas.content.includes('<@j9>'), 'marca o jogador no ticket');
+    assert.ok(boasVindas.embeds[0].toJSON().description.includes('Nick'));
+    passar('ticket: canal na categoria certa, jogador marcado e link devolvido');
+
+    // Sem CATEGORY_TICKETS_ID o ticket NUNCA cai na categoria das filas
+    const { client: clientSem, guild: guildSem } = ambienteFalso();
+    guildSem.channels.cache.set('cat-filas', {
+      id: 'cat-filas',
+      name: 'filas aqui',
+      type: ChannelType.GuildCategory,
+    });
+    guildSem.channels.fetch = async (id) => guildSem.channels.cache.get(id) ?? null;
+    const suporteAntigo = cfg.CATEGORIA_SUPORTE_ID;
+    cfg.CATEGORY_TICKETS_ID = '';
+    cfg.CATEGORIA_SUPORTE_ID = '';
+    const semCategoria = await tickets.abrirTicket(
+      { guild: guildSem, guildId: 'g1', user: { id: 'j8', username: 'jogador8', tag: 'jogador8#1' } },
+      { db, client: clientSem, tipo: 'suporte' },
+    );
+    cfg.CATEGORY_TICKETS_ID = categoriaAntiga;
+    cfg.CATEGORIA_SUPORTE_ID = suporteAntigo;
+    assert.strictEqual(semCategoria.canal.parentId, null, 'não invade a categoria de filas');
+    passar('ticket: sem categoria configurada não invade a categoria das filas');
+
+    // Botão do painel cria o ticket e devolve o link direto
+    const cliqueTicket = fakeInteraction({ commandName: undefined, userId: 'j7' });
+    cliqueTicket.customId = 'ap:ticket:suporte';
+    cliqueTicket.isButton = () => true;
+    cliqueTicket.guild = guildTicket;
+    cfg.CATEGORY_TICKETS_ID = 'cat-tickets';
+    await require('../src/interacoes/botoes').handleBotao(cliqueTicket, { db, client: clientTicket });
+    cfg.CATEGORY_TICKETS_ID = categoriaAntiga;
+    // o ambiente falso guarda os canais criados na coleção do client
+    const canalDoClique = clientTicket.channels.cache.find((canal) => canal.name === 'suporte-j7');
+    assert.ok(canalDoClique, 'canal do ticket criado pelo botão');
+    assert.strictEqual(canalDoClique.parentId, 'cat-tickets');
+    assert.ok(
+      cliqueTicket.chamadas.followUp.content.includes(
+        `Seu ticket foi criado com sucesso! Acesse: <#${canalDoClique.id}>`,
+      ),
+      'resposta aponta para o canal criado',
+    );
+    passar('ticket: botão cria o canal na categoria e devolve o link');
 
     // /pix dentro da sala: mediador manda a chave pelo comando
     const pixCanal = {
