@@ -705,6 +705,29 @@ function fakeInteraction({
     assert.strictEqual(partidas.buscar(db, partidaPix.id).pix_chave, 'pix@sala');
     assert.ok(pixCanal.enviadas.length >= 1, 'PIX publicado na sala');
     passar('/pix: mediador envia a chave na sala pelo comando');
+
+    // Servidor HTTP de saúde (Render)
+    const { criarServidor } = require('../src/servidor');
+    const http = require('http');
+    const servidor = criarServidor();
+    await new Promise((ok) => servidor.listen(0, '127.0.0.1', ok));
+    const porta = servidor.address().port;
+    const resposta = await new Promise((ok, falha) => {
+      http
+        .get({ host: '127.0.0.1', port: porta, path: '/' }, (res) => {
+          let corpo = '';
+          res.setEncoding('utf8');
+          res.on('data', (pedaco) => {
+            corpo += pedaco;
+          });
+          res.on('end', () => ok({ codigo: res.statusCode, corpo }));
+        })
+        .on('error', falha);
+    });
+    await new Promise((ok) => servidor.close(ok));
+    assert.strictEqual(resposta.codigo, 200);
+    assert.ok(resposta.corpo.includes('Royal AP Online e Operante'));
+    passar('servidor HTTP: responde 200 na porta do Render');
   }
 
   // ---------- limpeza ----------
