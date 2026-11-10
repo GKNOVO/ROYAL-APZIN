@@ -3,13 +3,18 @@
 /**
  * Central de Atendimento: painel com 5 setores, criação de canal privado e
  * boas-vindas personalizadas. Usado por /ticket, /ticketfixo e pelos botões.
+ *
+ * O canal do ticket nasce DENTRO da categoria definida em CATEGORY_TICKETS_ID
+ * (env). Ordem de busca: CATEGORY_TICKETS_ID → categoria salva no banco →
+ * CATEGORIA_SUPORTE_ID (nome antigo, mantido por compatibilidade) → categoria
+ * com nome de atendimento/suporte. A categoria das FILAS de AP nunca é usada.
  */
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
 const config = require('../config');
-const fluxo = require('./fluxo');
+const { obterConfig } = require('../db');
 const auditoria = require('./auditoria');
-const { embed, mencao } = require('../util/embeds');
+const { embed, mencao, mencaoCargo } = require('../util/embeds');
 
 const TIPOS = {
   suporte: {
@@ -130,6 +135,31 @@ function componentesCentral() {
   return [linha];
 }
 
+/**
+ * Categoria onde os tickets são criados.
+ * Nunca devolve a categoria das filas, mesmo que nada esteja configurado.
+ */
+async function resolverCategoriaTickets(guild, db) {
+  const candidatos = [
+    config.CATEGORY_TICKETS_ID,
+    obterConfig(db, guild.id, 'categoria_tickets', null),
+    config.CATEGORIA_SUPORTE_ID,
+    obterConfig(db, guild.id, 'categoria_suporte', null),
+  ].filter(Boolean);
+
+  for (const id of candidatos) {
+    const canal =
+      guild.channels.cache.get(String(id)) || (await guild.channels.fetch(String(id)).catch(() => null));
+    if (canal && canal.type === ChannelType.GuildCategory) return canal;
+    console.warn(
+      `[tickets] o ID "${id}" não é uma categoria deste servidor. Confira CATEGORY_TICKETS_ID no .env.`,
+    );
+  }
+
+  const categorias = guild.channels.cache.filter((canal) => canal.type === ChannelType.GuildCategory);
+  return categorias.find((canal) => /(suporte|atendimento|tickets?|central)/i.test(canal.name)) || null;
+}
+
 function permissoesDoTicket(guild, client, userId) {
   const A = PermissionFlagsBits;
   const permissoes = [
@@ -149,72 +179,95 @@ function permissoesDoTicket(guild, client, userId) {
   return permissoes;
 }
 
+function linhaFechar() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ap:fecharticket')
+      .setLabel('Fechar ticket')
+      .setEmoji('🔒')
+      .setStyle(ButtonStyle.Danger),
+  );
+}
+
 /**
  * Abre (ou reaproveita) o canal do ticket.
- * Devolve { canal, tipo, existente }.
+ * Devolve { canal, categoria, tipo, existente, link }.
  */
 async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
   const info = TIPOS[String(tipo)] || TIPOS.suporte;
   const guild = interaction.guild;
-  const categoria = await fluxo.resolverCategoria(guild, db, 'categoria_suporte', config.CATEGORIA_SUPORTE_ID);
-  const nome = `${info.id}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 90);
+  const usuario = interaction.user;
+  const categoria = await resolverCategoriaTickets(guild, db);
+
+  const nome = `${info.id}-${String(usuario.username || usuario.id)}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 90);
 
   const existente = guild.channels.cache.find(
     (canal) => canal.name === nome && canal.type === ChannelType.GuildText,
   );
-  if (existente) return { canal: existente, tipo: info.id, existente: true };
+  if (existente) {
+    return { canal: existente, categoria, tipo: info.id, existente: true, link: `<#${existente.id}>` };
+  }
 
   const canal = await guild.channels.create({
     name: nome,
     type: ChannelType.GuildText,
     ...(categoria ? { parent: categoria.id } : {}),
-    topic: `Ticket ${info.nome} de ${interaction.user.tag || interaction.user.username} · ORG Royal AP`,
-    permissionOverwrites: permissoesDoTicket(guild, client, interaction.user.id),
+    topic: `Ticket ${info.nome} de ${usuario.tag || usuario.username} · ORG Royal AP`,
+    permissionOverwrites: permissoesDoTicket(guild, client, usuario.id),
   });
 
+  // Mantém o ticket novo no fim da categoria (abaixo dos canais já existentes).
+  if (categoria) {
+    try {
+      const irmaos = guild.channels.cache.filter(
+        (outro) =>
+          outro.id !== canal.id && outro.parentId === categoria.id && outro.type === ChannelType.GuildText,
+      );
+      if (typeof canal.setPosition === 'function') await canal.setPosition(irmaos.size);
+    } catch (erro) {
+      console.warn('[tickets] não consegui posicionar o canal:', erro.message);
+    }
+  } else {
+    console.warn(
+      '[tickets] nenhuma categoria de atendimento encontrada. Configure CATEGORY_TICKETS_ID no .env para organizar os tickets.',
+    );
+  }
+
+  const cargos = [config.CARGO_ADMIN_ID, config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID].filter(Boolean);
+  const chamada = [mencao(usuario.id), ...cargos.map((id) => mencaoCargo(id))].join(' ');
+
   await canal.send({
-    content: `${mencao(interaction.user.id)} — ticket de **${info.nome}** aberto. A staff da ORG Royal AP já foi avisada.`,
+    content: `${chamada}\n**Ticket de ${info.nome}** aberto${categoria ? ` em **${categoria.name}**` : ''}. A staff já foi chamada — explique o caso aqui.`,
     embeds: [
       embed(`${info.emoji} ${info.nome} — Central de Atendimento`, info.boasVindas.join('\n'), {
         cor: config.CORES.principal,
         rodape: 'ORG Royal AP · atendimento',
       }),
     ],
-    allowedMentions: { parse: ['users'] },
+    components: [linhaFechar()],
+    allowedMentions: { users: [String(usuario.id)], roles: cargos.map(String) },
   });
-
-  await canal.send({
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('ap:fecharticket')
-          .setLabel('Fechar ticket')
-          .setEmoji('🔒')
-          .setStyle(ButtonStyle.Danger),
-      ),
-    ],
-  });
-
-  const cargos = [config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID, config.CARGO_ADMIN_ID]
-    .filter(Boolean)
-    .map((id) => `<@&${id}>`)
-    .join(' ');
-  if (cargos) {
-    await canal
-      .send({ content: `${cargos} — novo ticket de ${info.nome}.`, allowedMentions: { parse: [], roles: [] } })
-      .catch(() => {});
-  }
 
   await auditoria
     .registrar(db, client, {
       guildId: guild.id,
-      autorId: interaction.user.id,
+      autorId: usuario.id,
       acao: 'Ticket aberto',
-      detalhe: `${canal.name} · ${info.nome}`,
+      detalhe: `${canal.name} · ${info.nome}${categoria ? ` · ${categoria.name}` : ''}`,
     })
     .catch(() => {});
 
-  return { canal, tipo: info.id, existente: false };
+  return { canal, categoria, tipo: info.id, existente: false, link: `<#${canal.id}>` };
 }
 
-module.exports = { TIPOS, ORDEM, embedCentral, componentesCentral, abrirTicket };
+module.exports = {
+  TIPOS,
+  ORDEM,
+  embedCentral,
+  componentesCentral,
+  resolverCategoriaTickets,
+  abrirTicket,
+};

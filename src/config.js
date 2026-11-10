@@ -118,7 +118,10 @@ const config = {
   CAMINHO_BANCO: path.resolve(texto(process.env.DATABASE_PATH, 'database/royal.db')),
 
   CATEGORIA_FILAS_ID: texto(process.env.CATEGORIA_FILAS_ID),
-  CATEGORIA_SUPORTE_ID: texto(process.env.CATEGORIA_SUPORTE_ID),
+  /** Categoria onde os tickets são criados (nome oficial). */
+  CATEGORY_TICKETS_ID: texto(process.env.CATEGORY_TICKETS_ID),
+  /** Nome antigo da mesma variável — continua aceito para não quebrar .env já existente. */
+  CATEGORIA_SUPORTE_ID: texto(process.env.CATEGORIA_SUPORTE_ID) || texto(process.env.CATEGORY_TICKETS_ID),
 
   CARGO_ADMIN_ID: texto(process.env.CARGO_ADMIN_ID),
   CARGO_STAFF_ID: texto(process.env.CARGO_STAFF_ID),
