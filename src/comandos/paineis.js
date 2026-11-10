@@ -27,8 +27,7 @@ const comandos = config.MODOS.map((modo) => ({
       return responderErro(interaction, 'Use esse comando em um canal de texto.');
     }
 
-    await interaction.deferReply({ flags: EFEMERO }).catch(() => {});
-
+    // O deferReply já foi feito pelo despachante (src/comandos/index.js).
     const entradas = filas.listar(db, { guildId: interaction.guildId, modo: modo.id });
     const mensagem = await canal.send(paineis.mensagemPainel(modo, entradas));
 

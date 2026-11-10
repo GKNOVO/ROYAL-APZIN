@@ -12,6 +12,13 @@ async function handleSelect(interaction, ctx) {
   const partes = String(interaction.customId || '').split(':');
   if (partes[0] !== 'ap' || partes[1] !== 'preco') return false;
 
+  // Confirma o clique na hora: o Discord exige resposta em menos de 3 segundos.
+  try {
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+  } catch (erro) {
+    console.error('[selects] não consegui confirmar o clique:', erro.message);
+  }
+
   const modo = config.modoPorId(partes[2]);
   if (!modo) {
     await responderErro(interaction, 'Painel antigo. Peça para a staff publicar de novo.');

@@ -34,10 +34,23 @@ function ehStaff(member) {
   return Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 }
 
+/** Clique em botão/menu/modal: a primeira resposta já foi consumida pelo ack. */
+function ehComponente(interaction) {
+  return Boolean(
+    interaction.isButton?.() ||
+      interaction.isAnySelectMenu?.() ||
+      interaction.isModalSubmit?.() ||
+      interaction.isContextMenuCommand?.(),
+  );
+}
+
 /** Responde sem saber se a interação já foi respondida. */
 async function responder(interaction, payload) {
   const corpo = typeof payload === 'string' ? { content: payload } : payload;
-  if (interaction.deferred || interaction.replied) return interaction.editReply(corpo);
+  // Comando já adiado (deferReply) → usa a mensagem "pensando" (editReply).
+  if (interaction.deferred && !ehComponente(interaction)) return interaction.editReply(corpo);
+  // Componente já confirmado (deferUpdate/update) → followUp, sem mexer no painel.
+  if (interaction.deferred || interaction.replied) return interaction.followUp(corpo);
   return interaction.reply(corpo);
 }
 
@@ -45,6 +58,7 @@ async function responder(interaction, payload) {
 async function responderPrivado(interaction, payload) {
   const corpo = typeof payload === 'string' ? { content: payload } : { ...payload };
   corpo.flags = (corpo.flags ?? 0) | EFEMERO;
+  if (interaction.deferred && !ehComponente(interaction)) return interaction.editReply(corpo);
   if (interaction.deferred || interaction.replied) return interaction.followUp(corpo);
   return interaction.reply(corpo);
 }
@@ -84,6 +98,7 @@ module.exports = {
   ehAdmin,
   ehMediador,
   ehStaff,
+  ehComponente,
   responder,
   responderPrivado,
   responderErro,

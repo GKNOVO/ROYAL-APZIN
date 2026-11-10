@@ -41,7 +41,6 @@ const comandos = [
 
     async executar(interaction, { db, client }) {
       if (!(await exigirMediador(interaction))) return;
-      await interaction.deferReply().catch(() => {});
 
       const time = interaction.options.getInteger('time');
       const partida = localizar(db, interaction);
@@ -76,7 +75,6 @@ const comandos = [
 
     async executar(interaction, { db, client }) {
       if (!(await exigirMediador(interaction))) return;
-      await interaction.deferReply().catch(() => {});
 
       const ausente = interaction.options.getInteger('ausente');
       const partida = localizar(db, interaction);
