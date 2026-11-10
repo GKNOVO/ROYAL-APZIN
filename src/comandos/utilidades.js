@@ -16,6 +16,7 @@ const filas = require('../servicos/filas');
 const partidas = require('../servicos/partidas');
 const paineis = require('../servicos/paineis');
 const fluxo = require('../servicos/fluxo');
+const tickets = require('../servicos/tickets');
 const auditoria = require('../servicos/auditoria');
 const { exigirStaff, exigirAdmin, responderPrivado, responderErro } = require('../util/seguranca');
 const { embed, embedSucesso, mencao, dataBR } = require('../util/embeds');
@@ -95,8 +96,9 @@ const comandos = [
         '**Painéis de AP:**',
         paineisDisponiveis,
         '',
-        '**Jogador:** `/perfil` · `/ranking` · `/apostas` · `/convites` · `/aux`',
-        '**Staff:** `/painel_mediador` · `/registrar_pix` · `/vencedor` · `/wo` · `/receita_mediadores` · `/analista`',
+        '**Jogador:** `/perfil` · `/ranking` · `/apostas` · `/convites` · `/ticket`',
+        '**Staff:** `/painel_mediador` · `/registrar_pix` · `/pix` · `/vencedor` · `/wo` · `/receita_mediadores` · `/analista`',
+        '**Atendimento:** `/ticket` (painel temporário, 15s) · `/ticketfixo` (painel fixo, só ADM)',
         '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot`',
       ].join('\n');
 
@@ -121,7 +123,7 @@ const comandos = [
         new ButtonBuilder().setCustomId('ap:minhasalas').setLabel('Salas ativas').setEmoji('📋').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('ap:ranking').setLabel('Ranking').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('ap:ajuda').setLabel('Ajuda').setEmoji('❓').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('ap:aux').setLabel('Abrir ticket').setEmoji('🎫').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('ap:central').setLabel('Central de atendimento').setEmoji('🎫').setStyle(ButtonStyle.Secondary),
       );
 
       return interaction.reply({
@@ -145,24 +147,61 @@ const comandos = [
   {
     data: new SlashCommandBuilder()
       .setName('aux')
-      .setDescription('Abre um ticket de suporte com a staff')
-      .addStringOption((opcao) => opcao.setName('motivo').setDescription('Resumo do problema')),
+      .setDescription('Atalho reservado — o atendimento agora é pelo /ticket'),
 
-    async executar(interaction, { db, client }) {
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
-      try {
-        const canal = await abrirTicket(interaction, {
-          db,
-          client,
-          motivo: interaction.options.getString('motivo') ?? 'suporte',
-        });
-        return interaction.editReply({ content: `🎫 Ticket aberto: ${canal}.` });
-      } catch (erro) {
-        console.error('[aux] falha ao abrir ticket:', erro.message);
-        return interaction.editReply({
-          content: '❌ Não consegui abrir o ticket. Avise um ADM (o bot precisa de **Gerenciar Canais**).',
-        });
+    async executar(interaction) {
+      // A abertura direta foi desativada de propósito. A função continua guardada
+      // em servicos/tickets.js (abrirTicket) para quando precisar de novo.
+      return interaction.reply({
+        content: 'Use o comando `/ticket` para abrir a Central de Atendimento.',
+        flags: 64,
+      });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('ticket')
+      .setDescription('Abre a Central de Atendimento (painel temporário, só você vê)'),
+
+    async executar(interaction) {
+      await interaction.reply({
+        embeds: [tickets.embedCentral()],
+        components: tickets.componentesCentral(),
+        flags: 64,
+      });
+
+      // O painel se apaga sozinho em 15 segundos para não poluir o canal.
+      const expira = setTimeout(() => {
+        interaction.deleteReply().catch(() => {});
+      }, 15000);
+      if (typeof expira.unref === 'function') expira.unref();
+      interaction.__expiraTicket = expira;
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
+      .setName('ticketfixo')
+      .setDescription('Publica a Central de Atendimento permanente no canal (só ADM)'),
+
+    async executar(interaction) {
+      if (!(await exigirAdmin(interaction, 'Só ADM/Gerente pode publicar a Central de Atendimento fixa.'))) return;
+
+      const canal = interaction.channel;
+      if (!canal?.isTextBased?.()) {
+        return responderErro(interaction, 'Use esse comando em um canal de texto.');
       }
+
+      const mensagem = await canal.send({
+        embeds: [tickets.embedCentral()],
+        components: tickets.componentesCentral(),
+      });
+      if (typeof mensagem.pin === 'function') await mensagem.pin().catch(() => {});
+
+      return responderPrivado(interaction, {
+        embeds: [embedSucesso('Central de Atendimento publicada e fixada neste canal.')],
+      });
     },
   },
 
