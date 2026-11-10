@@ -155,6 +155,11 @@ function fakeInteraction({
       interaction.deferred = true;
       return payload;
     },
+    async deferUpdate() {
+      chamadas.deferUpdate = true;
+      interaction.deferred = true;
+      return true;
+    },
     async editReply(payload) {
       chamadas.editReply = payload;
       return payload;
@@ -173,6 +178,11 @@ function fakeInteraction({
     },
   };
   return interaction;
+}
+
+/** Resposta final da interação (o deferReply automático vem antes dela). */
+function resposta(interaction) {
+  return interaction.chamadas.editReply ?? interaction.chamadas.followUp ?? interaction.chamadas.reply;
 }
 
 (async () => {
@@ -562,22 +572,23 @@ function fakeInteraction({
     const registroTeste = staff.obter(db, 'g1', 'u1');
     assert.strictEqual(registroTeste.pix_chave, 'pix@teste.com');
     assert.strictEqual(registroTeste.comissao, 0.1);
-    assert.ok(it.chamadas.reply.embeds || it.chamadas.reply.content);
-    passar('/registrar_pix: salva chave e converte comissão de % para fração');
+    assert.strictEqual(it.chamadas.deferReply.flags, 64, 'deferReply efêmero imediato');
+    assert.ok(resposta(it).embeds || resposta(it).content);
+    passar('/registrar_pix: deferReply imediato, salva chave e converte comissão');
 
     // /registrar_pix sem cargo
     const semPermissao = fakeInteraction({ commandName: 'registrar_pix', options: { chave: 'x@y.com' } });
     await comandos.executar(semPermissao, { db, client: { channels: { cache: new Collection(), fetch: async () => null } } });
-    assert.ok(semPermissao.chamadas.reply.embeds[0].toJSON().description.includes('staff'));
+    assert.ok(resposta(semPermissao).embeds[0].toJSON().description.includes('staff'));
     passar('/registrar_pix: bloqueia quem não é staff');
 
     // /ajuda e /perfil
     const ajuda = fakeInteraction({ commandName: 'ajuda' });
     await comandos.executar(ajuda, { db, client: null });
-    assert.ok(ajuda.chamadas.reply.embeds[0].toJSON().description.includes('painel_mediador'));
+    assert.ok(resposta(ajuda).embeds[0].toJSON().description.includes('painel_mediador'));
     const perfil = fakeInteraction({ commandName: 'perfil' });
     await comandos.executar(perfil, { db, client: null });
-    assert.ok(perfil.chamadas.reply.embeds[0].toJSON().title.includes('u1'));
+    assert.ok(resposta(perfil).embeds[0].toJSON().title.includes('u1'));
     passar('/ajuda e /perfil respondem com embed');
 
     // /loja addcoins exige ADM e credita
@@ -593,7 +604,8 @@ function fakeInteraction({
     // /vencedor sem permissão
     const vencedorSemPermissao = fakeInteraction({ commandName: 'vencedor', options: { time: 1 } });
     await comandos.executar(vencedorSemPermissao, { db, client: null });
-    assert.ok(vencedorSemPermissao.chamadas.reply.embeds[0].toJSON().description.includes('mediadores'));
+    assert.strictEqual(vencedorSemPermissao.chamadas.deferReply.flags, undefined, '/vencedor responde público');
+    assert.ok(resposta(vencedorSemPermissao).embeds[0].toJSON().description.includes('mediadores'));
     passar('/vencedor: bloqueia quem não é mediador');
 
     // /boombot status
@@ -602,15 +614,16 @@ function fakeInteraction({
       db,
       client: { ws: { ping: 42 }, guilds: { cache: new Collection() } },
     });
-    assert.ok(status.chamadas.reply.embeds[0].toJSON().title.includes('Status'));
+    assert.ok(resposta(status).embeds[0].toJSON().title.includes('Status'));
     passar('/boombot status: mostra saúde do bot');
 
     // /ticket: Central de Atendimento efêmera, apaga em 15s
     const ticket = fakeInteraction({ commandName: 'ticket' });
     await comandos.executar(ticket, { db, client: null });
-    assert.strictEqual(ticket.chamadas.reply.flags, 64);
+    assert.strictEqual(ticket.chamadas.deferReply.flags, 64, 'deferReply efêmero antes do painel');
+    assert.strictEqual(resposta(ticket).flags, 64);
     assert.deepStrictEqual(
-      ticket.chamadas.reply.components[0].toJSON().components.map((botao) => botao.label),
+      resposta(ticket).components[0].toJSON().components.map((botao) => botao.label),
       ['Suporte', 'Reembolso', 'Resgatar Evento', 'Vagas', 'Divulgação'],
     );
     assert.ok(ticket.__expiraTicket, 'timer de 15s agendado');
@@ -620,14 +633,14 @@ function fakeInteraction({
     // /aux desativado de propósito
     const aux = fakeInteraction({ commandName: 'aux' });
     await comandos.executar(aux, { db, client: null });
-    assert.ok(aux.chamadas.reply.content.includes('/ticket'));
-    assert.strictEqual(aux.chamadas.reply.flags, 64);
+    assert.ok(resposta(aux).content.includes('/ticket'));
+    assert.strictEqual(resposta(aux).flags, 64);
     passar('/aux: só orienta a usar /ticket (não abre ticket)');
 
     // /ticketfixo: bloqueia quem não é ADM
     const fixoSemPermissao = fakeInteraction({ commandName: 'ticketfixo' });
     await comandos.executar(fixoSemPermissao, { db, client: null });
-    assert.ok(fixoSemPermissao.chamadas.reply, 'respondeu negando');
+    assert.ok(resposta(fixoSemPermissao), 'respondeu negando');
     passar('/ticketfixo: bloqueia quem não é ADM');
 
     // /ticketfixo: publica no canal para ADM
@@ -706,13 +719,48 @@ function fakeInteraction({
     assert.ok(pixCanal.enviadas.length >= 1, 'PIX publicado na sala');
     passar('/pix: mediador envia a chave na sala pelo comando');
 
+    // /filasx1mobile: deferReply imediato + painel de 14 cards publicado
+    const canalPainel = {
+      id: 'canal-painel',
+      name: 'ap-1x1',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalPainel.enviadas.push(payload);
+        return { id: 'msg-painel' };
+      },
+    };
+    const clientePainel = { channels: { cache: new Collection(), fetch: async () => null } };
+    const comandoPainel = fakeInteraction({
+      commandName: 'filasx1mobile',
+      channel: canalPainel,
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(comandoPainel, { db, client: clientePainel });
+    assert.strictEqual(comandoPainel.chamadas.deferReply.flags, 64, 'respondeu antes de montar o painel');
+    assert.strictEqual(canalPainel.enviadas.length, 1, 'painel publicado');
+    assert.strictEqual(canalPainel.enviadas[0].embeds[0].toJSON().fields.length, 14);
+    assert.ok(resposta(comandoPainel).content.includes('publicado'));
+    passar('/filasx1mobile: deferReply em <3s + painel de 14 cards no canal');
+
+    // Botão: ack instantâneo com deferUpdate + resposta em followUp
+    const { handleBotao } = require('../src/interacoes/botoes');
+    const botaoComo = fakeInteraction({ commandName: undefined });
+    botaoComo.customId = 'ap:como';
+    botaoComo.isButton = () => true;
+    const tratado = await handleBotao(botaoComo, { db, client: null });
+    assert.strictEqual(tratado, true);
+    assert.strictEqual(botaoComo.chamadas.deferUpdate, true, 'deferUpdate antes de qualquer envio');
+    assert.ok(botaoComo.chamadas.followUp.embeds[0].toJSON().title.includes('Como funciona'));
+    passar('botão: deferUpdate imediato e resposta sem "Interaction Failed"');
+
     // Servidor HTTP de saúde (Render)
     const { criarServidor } = require('../src/servidor');
     const http = require('http');
     const servidor = criarServidor();
     await new Promise((ok) => servidor.listen(0, '127.0.0.1', ok));
     const porta = servidor.address().port;
-    const resposta = await new Promise((ok, falha) => {
+    const saude = await new Promise((ok, falha) => {
       http
         .get({ host: '127.0.0.1', port: porta, path: '/' }, (res) => {
           let corpo = '';
@@ -725,8 +773,8 @@ function fakeInteraction({
         .on('error', falha);
     });
     await new Promise((ok) => servidor.close(ok));
-    assert.strictEqual(resposta.codigo, 200);
-    assert.ok(resposta.corpo.includes('Royal AP Online e Operante'));
+    assert.strictEqual(saude.codigo, 200);
+    assert.ok(saude.corpo.includes('Royal AP Online e Operante'));
     passar('servidor HTTP: responde 200 na porta do Render');
   }
 
