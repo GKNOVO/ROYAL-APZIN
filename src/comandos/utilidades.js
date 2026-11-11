@@ -29,7 +29,7 @@ const comandos = [
         '1. A staff publica o painel do modo no canal (ex: `/filasx1mobile`).',
         '2. Você escolhe a **faixa de aposta** no menu e o **tipo de gelo**.',
         '3. Quando o grupo fecha, o bot cria uma **sala privada** só com os jogadores.',
-        '4. Um jogador envia a regra; todos confirmam.',
+        '4. Os dois jogadores clicam em **Confirmar Partida** na sala privada.',
         '5. O **mediador** assume, manda o PIX, confere o pagamento e libera a sala.',
         '6. No fim, o mediador declara o vencedor (ou aplica W.O.).',
         '',
@@ -41,7 +41,7 @@ const comandos = [
         '**Configuração:** `/boombot setticket` (canal de referência dos tickets) · `/boombot setfila` (canal acima das filas) · `/boombot setlog`',
         '**Atendimento:** `/ticket` (painel temporário, 15s) · `/ticketfixo` (painel fixo, só ADM)',
         '**Nix FF (salas automáticas):** `/nix status` · `/nix criarsala` · `/nix iniciar` · `/nix statussala` · `/nix resultado`',
-        '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot`',
+        '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot` · `/botperfil`',
       ].join('\n');
 
       return responderPrivado(interaction, {

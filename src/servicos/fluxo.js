@@ -15,7 +15,7 @@ const {
 
 const config = require('../config');
 const { obterConfig, definirConfig } = require('../db');
-const { embed, reais, mencao, mencaoCargo } = require('../util/embeds');
+const { embed, reais, mencao, mencaoCargo, tituloCurto } = require('../util/embeds');
 const filas = require('./filas');
 const partidas = require('./partidas');
 const staff = require('./staff');
@@ -40,9 +40,39 @@ function textoJogadores(lista) {
     .join('\n\n');
 }
 
+/** "1v1 Mobile Gelo Normal" — tipo da partida no card da sala. */
+function tipoPartida(modo, gelo) {
+  if (!modo) return String(gelo || 'AP');
+  const variante = config.varianteDoModo(modo, gelo);
+  return `${tituloCurto(modo)}${variante ? ` ${variante.nome}` : ''}`;
+}
+
 function embedPartida(partida, lista) {
   const modo = config.modoPorId(partida.modo);
   const variante = config.varianteDoModo(modo, partida.gelo);
+
+  // Card de abertura da sala: "Aguardando" + aposta + premiação + jogadores.
+  // Sem textão de instruções — o fluxo anda pelos botões.
+  if (partida.status === STATUS.CONFIRMANDO) {
+    const comissao = Number(partida.comissao) > 0 ? Number(partida.comissao) : config.COMISSAO_PADRAO;
+    const premio = Math.round(Number(partida.preco) * 2 * (1 - comissao));
+    const jogadores = lista.length
+      ? lista
+          .map((linha, indice) => `${indice + 1}. ${mencao(linha.user_id)}${linha.confirmou ? ' ✅' : ''}`)
+          .join('\n')
+      : '`sem jogadores`';
+
+    return embed(`⏳ Aguardando · ${tipoPartida(modo, partida.gelo)}`, null, {
+      cor: config.CORES.aviso,
+      campos: [
+        { name: 'Aposta', value: reais(partida.preco), inline: true },
+        { name: 'Premiação', value: reais(premio), inline: true },
+        { name: 'Jogadores', value: jogadores, inline: false },
+      ],
+      rodape: `Sala ${partida.id} · ORG Royal AP`,
+    });
+  }
+
   const campos = [
     { name: 'Modo', value: modo ? modo.titulo : partida.modo, inline: true },
     { name: 'Aposta', value: reais(partida.preco), inline: true },
@@ -62,12 +92,6 @@ function embedPartida(partida, lista) {
   let cor = config.CORES.principal;
 
   switch (partida.status) {
-    case STATUS.CONFIRMANDO:
-      descricao =
-        '**Passo 1 · Regras**\n' +
-        'Um dos jogadores clica em **Enviar regra** e escreve a regra da partida.\n' +
-        'Depois **todos** clicam em **Confirmar Regras**.';
-      break;
     case STATUS.AGUARDANDO_MEDIADOR:
       descricao = `**Passo 2 · Mediação**\nRegras confirmadas. Aguardando ${mencaoCargo(config.CARGO_MEDIADOR_ID)} assumir a sala.`;
       cor = config.CORES.aviso;
@@ -152,8 +176,7 @@ function componentesPartida(partida) {
     case STATUS.CONFIRMANDO:
       linhas.push(
         linha(
-          botao(`ap:regras:${id}`, 'Enviar regra', '📜', ButtonStyle.Secondary),
-          botao(`ap:confirmar:${id}`, 'Confirmar Regras', '✅', ButtonStyle.Success),
+          botao(`ap:confirmar:${id}`, 'Confirmar Partida', '✅', ButtonStyle.Success),
           botao(`ap:cancelar:${id}`, 'Cancelar', '🚫', ButtonStyle.Danger),
         ),
       );
@@ -223,7 +246,12 @@ async function resolverCategoria(guild, db, chave, envId) {
 }
 
 async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogadores }) {
-  const categoria = await resolverCategoria(guild, db, 'categoria_filas', config.CATEGORIA_FILAS_ID);
+  // Canal de referência (CANAL_FILA_ID / `/boombot setfila`): a sala nasce FORA
+  // de categoria, logo ABAIXO dele. A categoria antiga é só fallback.
+  const referencia = await paineis.canalDeReferencia(guild, db);
+  const categoria = referencia
+    ? null
+    : await resolverCategoria(guild, db, 'categoria_filas', config.CATEGORIA_FILAS_ID);
   const A = PermissionFlagsBits;
   const permissoes = [
     { id: guild.roles.everyone.id, deny: [A.ViewChannel] },
@@ -245,15 +273,19 @@ async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogador
     }
   }
 
-  const nome = `ap-${modo.id}-${String(preco / 100).replace('.', ',')}-${gelo}`.toLowerCase().slice(0, 95);
+  // #fila-gelo-normal-001 — numeração contínua por tipo de entrada.
+  const nome = paineis.nomeSalaFila(guild, modo, gelo);
 
-  return guild.channels.create({
+  const canal = await guild.channels.create({
     name: nome,
     type: ChannelType.GuildText,
     ...(categoria ? { parent: categoria.id } : {}),
     topic: `AP ${modo.titulo} · ${reais(preco)} · ${gelo} · sala privada`,
     permissionOverwrites: permissoes,
   });
+
+  if (referencia) await paineis.posicionarAbaixo(canal, referencia);
+  return canal;
 }
 
 async function publicarSala(client, db, partida) {
@@ -473,6 +505,7 @@ module.exports = {
   STATUS,
   nomeTime,
   textoJogadores,
+  tipoPartida,
   embedPartida,
   componentesPartida,
   resolverCategoria,

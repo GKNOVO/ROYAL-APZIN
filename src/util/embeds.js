@@ -34,12 +34,22 @@ function listaUsuarios(ids, vazio = '—') {
   return ids.map(mencao).join(', ');
 }
 
+/** 1x1 mobile -> 1v1 Mobile (nome curto usado nos cards). */
+function tituloCurto(modo) {
+  const nome = String(modo?.nome || modo?.id || '').replace(/x/gi, 'v');
+  const plataforma = String(modo?.plataformaNome || '')
+    .replace(/(^|\s)\S/g, (letra) => letra.toUpperCase())
+    .trim();
+  return `${nome} ${plataforma}`.trim();
+}
+
 function embed(titulo, descricao, opcoes = {}) {
   const montado = new EmbedBuilder()
     .setColor(opcoes.cor ?? config.CORES.principal)
-    .setDescription(descricao)
     .setTimestamp();
 
+  // Descrição é opcional: os cards minimalistas das filas usam só título + campos.
+  if (descricao) montado.setDescription(descricao);
   if (titulo) montado.setTitle(titulo);
   if (Array.isArray(opcoes.campos) && opcoes.campos.length > 0) {
     montado.addFields(opcoes.campos.slice(0, 25));
@@ -67,6 +77,7 @@ module.exports = {
   mencao,
   mencaoCargo,
   listaUsuarios,
+  tituloCurto,
   embed,
   embedErro,
   embedSucesso,

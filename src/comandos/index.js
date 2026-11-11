@@ -18,6 +18,7 @@ const modulos = [
   require('./staff'),
   require('./moderacao'),
   require('./utilidades'),
+  require('./botperfil'),
   require('./nix'),
 ];
 

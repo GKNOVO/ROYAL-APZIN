@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 49 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 51 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -67,7 +67,7 @@ serviço não entra mais em timeout.
    - **Start Command:** `npm start`
    - **Instance Type:** `Free`
 4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
-   `CANAL_FILA_ID`, `TICKET_CANAL_ID`, `CATEGORIA_FILAS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
+   `CANAL_FILA_ID`, `TICKET_CANAL_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
    `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
    Não precisa criar `PORT`: o Render injeta essa variável sozinho.
 5. **Create Web Service**. Nos logs deve aparecer:
@@ -75,7 +75,7 @@ serviço não entra mais em timeout.
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 49 comandos registrados
+✅ 51 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -175,8 +175,12 @@ ali as **15 mensagens**, uma por faixa de aposta:
 💵 R$ 0,50     ← última mensagem (fica embaixo)
 ```
 
-Cada mensagem tem os próprios botões (Gelo Infinito / Gelo Normal / Normal / Full UMP e XM8 /
-Full Capa / 1 Emu... / Sair) e é atualizada sozinha quando alguém entra ou sai daquela faixa.
+Cada mensagem é um card enxuto — título `1v1 Mobile | R$ 0,50` e o campo **Jogadores**
+(`Nenhum jogador na fila.` ou `Gelo Normal | @jogador`) — atualizado na hora em que alguém entra
+ou sai daquela faixa.
+
+O botão **❌ Sair da fila** é dinâmico: ele não fica no card público (que é igual para todos),
+aparece só na resposta efêmera de quem está naquela faixa — ninguém mais vê o botão.
 
 ### 3.2 Tickets: canal de referência e aviso temporário
 
@@ -230,14 +234,19 @@ Mencionar Everyone · Anexar Arquivos.
 ## 5. Como funciona um AP
 
 1. **Jogador** escolhe a faixa no menu do painel (R$ 0,50 até R$ 100,00) e o tipo de gelo.
-2. Quando o grupo fecha (2 jogadores no 1x1, 8 no 4x4…), o bot **cria a sala privada** na categoria
-   de filas, só com os jogadores + staff.
-3. Um jogador clica em **📜 Enviar regra** e escreve a regra; todos clicam em **✅ Confirmar Regras**.
-4. O bot marca o cargo Mediador. Um mediador clica em **👑 Assumir sala**.
-5. **💸 Enviar PIX** (botão) ou **`/pix`** na sala → a chave cadastrada aparece na sala e na DM dos
+2. Quando o grupo fecha (2 jogadores no 1x1, 8 no 4x4…), o bot limpa a fila do painel e **cria a
+   sala privada** (`#fila-gelo-normal-001`, `#fila-gelo-normal-002`…) **logo abaixo do canal de
+   referência**, só com os jogadores + staff.
+3. A sala nasce com o card **⏳ Aguardando · 1v1 Mobile Gelo Normal** — aposta, premiação e os
+   jogadores numerados — e os botões **Confirmar Partida** e **Cancelar**.
+4. Cada confirmação aparece no chat da sala: *“✅ @Jogador1 confirmou a partida. Agora falta apenas
+   @Jogador2 para confirmar.”* e, na segunda, *“Todos confirmaram! Partida iniciando...”* — sempre
+   marcando @STAFF / @MEDIADOR.
+5. O bot marca o cargo Mediador. Um mediador clica em **👑 Assumir sala**.
+6. **💸 Enviar PIX** (botão) ou **`/pix`** na sala → a chave cadastrada aparece na sala e na DM dos
    jogadores. O mediador confere os comprovantes e clica em **✅ Pagamento recebido**.
-6. **🎮 Liberar sala** → o mediador digita ID e senha; o bot publica para os jogadores.
-7. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
+7. **🎮 Liberar sala** → o mediador digita ID e senha; o bot publica para os jogadores.
+8. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
    comissão do mediador e auditoria.
 
 Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamento` → `pago` →
@@ -245,7 +254,7 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 
 ---
 
-## 6. Comandos (49)
+## 6. Comandos (51)
 
 **Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
@@ -254,18 +263,24 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 `/filasx1emu` `/filasx2emu` `/filasx3emu` `/filasx4emu`
 `/filasx2misto` `/filasx3misto` `/filasx4misto`
 
-Cada painel mostra **14 cards**, do **R$ 0,50 no topo** ao **R$ 100,00 no fundo**, e os botões mudam conforme a categoria do canal:
+Cada painel publica **15 mensagens** (uma por faixa), do **R$ 100,00 no topo** ao **R$ 0,50 no fundo**, e os botões mudam conforme a categoria do canal:
 
 | Categoria | Botões do card |
 |---|---|
-| Mobile | 🧊 Gelo Infinito · 🧊 Gelo Normal · ❌ Sair · ❓ Como funciona |
-| Emulador | ✔️ Normal · 🔫 Full UMP e XM8 · ❌ Sair · ❓ Como funciona |
-| Full Capa | 🎯 Full Capa · ❌ Sair · ❓ Como funciona |
-| Misto 2x2 | 🎮 1 Emu · ❌ Sair |
-| Misto 3x3 | 🎮 1 Emu · 🎮 2 Emu · ❌ Sair |
-| Misto 4x4 | 🎮 1 Emu · 🎮 2 Emu · 🎮 3 Emu · ❌ Sair |
+| Mobile | 🧊 Gelo Infinito · 🧊 Gelo Normal · ❓ Como funciona |
+| Emulador | ✔️ Normal · 🔫 Full UMP e XM8 · ❓ Como funciona |
+| Full Capa | 🎯 Full Capa · ❓ Como funciona |
+| Misto 2x2 | 🎮 1 Emu |
+| Misto 3x3 | 🎮 1 Emu · 🎮 2 Emu |
+| Misto 4x4 | 🎮 1 Emu · 🎮 2 Emu · 🎮 3 Emu |
+
+O **Sair** não fica nesse card público: ele aparece na resposta efêmera de quem está na fila daquela faixa.
 
 O ranking **não** fica dentro dos painéis: é o comando separado `/ranking`.
+
+**ADM · perfil do bot** — `/botperfil` (atalho `/setbot`) abre um painel só para ADM com botões para
+trocar **nome**, **avatar** (link da imagem), **descrição/sobre mim** e **status** do bot pelo próprio
+Discord, sem abrir o Developer Portal.
 
 **Jogador**
 

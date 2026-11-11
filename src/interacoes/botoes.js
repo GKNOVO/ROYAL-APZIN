@@ -22,17 +22,31 @@ const {
 
 const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
 
-async function avisarMediadores(client, partida) {
-  if (!config.CARGO_MEDIADOR_ID) return;
+/**
+ * Mensagem PÚBLICA na sala: quem confirmou, quem falta e a marcação da
+ * @STAFF / @MEDIADOR — exatamente o texto combinado com a ORG.
+ */
+async function avisarConfirmacao(client, { partida, userId, completo, faltando = [] }) {
   try {
-    const canal = client.channels.cache.get(partida.canal_id) || (await client.channels.fetch(partida.canal_id));
-    if (!canal) return;
+    const canal =
+      client?.channels?.cache?.get?.(partida.canal_id) || (await client?.channels?.fetch?.(partida.canal_id));
+    if (!canal?.send) return;
+
+    const cargos = [config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID].filter(Boolean);
+    const marcaStaff = cargos.length ? `\n${cargos.map((id) => mencaoCargo(id)).join(' ')}` : '';
+    const restantes =
+      faltando.length > 1
+        ? `Agora faltam ${faltando.length} jogadores: ${faltando.map((id) => mencao(id)).join(', ')}.`
+        : `Agora falta apenas ${mencao(faltando[0])} para confirmar.`;
+
     await canal.send({
-      content: `${mencaoCargo(config.CARGO_MEDIADOR_ID)} — regras confirmadas. Quem assume esta sala?`,
-      allowedMentions: { parse: [], roles: [config.CARGO_MEDIADOR_ID] },
+      content: completo
+        ? `✅ ${mencao(userId)} confirmou a partida. Todos confirmaram! Partida iniciando...${marcaStaff}`
+        : `✅ ${mencao(userId)} confirmou a partida. ${restantes}${marcaStaff}`,
+      allowedMentions: { users: [String(userId)], roles: cargos.map(String) },
     });
   } catch (erro) {
-    console.error('[botoes] não consegui avisar os mediadores:', erro.message);
+    console.error('[botoes] não consegui avisar a confirmação na sala:', erro.message);
   }
 }
 
@@ -68,8 +82,16 @@ async function entrarNaFilaBotao(interaction, { db, client }, modoId, preco, gel
             `**Posição:** ${resultado.posicao}\n**Faltam:** ${resultado.faltam} jogador(es) para fechar.`,
         ),
       ],
+      // Só quem está nesta faixa recebe o "Sair" — ninguém mais vê este botão.
+      components: [paineis.linhaSair(modo, Number(preco))],
     });
   } catch (erro) {
+    if (/já está nessa fila/i.test(String(erro.message))) {
+      return responderPrivado(interaction, {
+        embeds: [embedErro(erro.message)],
+        components: [paineis.linhaSair(modo, Number(preco))],
+      });
+    }
     return responderErro(interaction, erro.message);
   }
 }
@@ -97,10 +119,20 @@ async function confirmarRegras(interaction, { db, client }, partidaId) {
     const resultado = partidas.confirmar(db, partidaId, interaction.user.id);
     await fluxo.atualizarPartida(client, db, partidaId);
 
+    const faltando = partidas
+      .jogadores(db, partidaId)
+      .filter((linha) => linha.confirmou !== 1)
+      .map((linha) => linha.user_id);
+    await avisarConfirmacao(client, {
+      partida: resultado.partida,
+      userId: interaction.user.id,
+      completo: resultado.completo,
+      faltando,
+    });
+
     if (resultado.completo) {
-      await avisarMediadores(client, resultado.partida);
       return responderPrivado(interaction, {
-        embeds: [embedSucesso('Regras confirmadas por todos! ✅\nAgora o mediador vai assumir a sala.')],
+        embeds: [embedSucesso('Todos confirmaram! ✅\nPartida iniciando — a staff já foi marcada na sala.')],
       });
     }
 
@@ -228,7 +260,7 @@ async function handleBotao(interaction, ctx) {
 
   // "regras" e "liberar" abrem modal: showModal precisa ser a PRIMEIRA resposta,
   // por isso esses dois não podem ser adiados.
-  const abreModal = acao === 'regras' || acao === 'liberar';
+  const abreModal = acao === 'regras' || acao === 'liberar' || acao.startsWith('bot');
 
   // Confirma o clique imediatamente (deferUpdate) em todos os outros casos:
   // o Discord nunca mostra "O aplicativo não respondeu". O painel continua
@@ -327,6 +359,19 @@ async function handleBotao(interaction, ctx) {
         const { abrirModalRegras, abrirModalSala } = require('./modais');
         if (acao === 'regras') await abrirModalRegras(interaction, db, args[0]);
         else await abrirModalSala(interaction, db, args[0]);
+        return true;
+      }
+
+      case 'botnome':
+      case 'botavatar':
+      case 'botdescricao':
+      case 'botstatus': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADMs podem mudar o perfil do bot.');
+          return true;
+        }
+        const { abrirModalBotPerfil } = require('./modais');
+        await abrirModalBotPerfil(interaction, acao.replace(/^bot/, ''));
         return true;
       }
 

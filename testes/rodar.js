@@ -5,7 +5,7 @@
  *   node testes/rodar.js
  *
  * Testa banco, filas, partidas, PIX, fluxo da sala, painéis, tickets, API da Nix
- * e os 49 comandos.
+ * e os 51 comandos.
  */
 
 process.env.DISCORD_TOKEN = 'token-de-teste';
@@ -351,9 +351,13 @@ function resposta(interaction) {
     const canal = client.channels.cache.get(entrada.canalId);
     assert.ok(canal.enviadas.length >= 1);
     const embedSala = canal.enviadas[0].payload.embeds[0].toJSON();
-    assert.ok(embedSala.title.includes('1x1'));
-    assert.ok(canal.enviadas[0].payload.components.length >= 1);
-    passar('fluxo: sala já nasce com embed e botão de confirmar');
+    assert.ok(embedSala.title.includes('Aguardando'), 'card de abertura "Aguardando"');
+    assert.ok(embedSala.title.includes('1v1 Mobile Gelo Normal'), 'tipo da partida no título');
+    assert.deepStrictEqual(
+      canal.enviadas[0].payload.components[0].toJSON().components.map((botao) => botao.label),
+      ['Confirmar Partida', 'Cancelar'],
+    );
+    passar('fluxo: sala nasce com card "Aguardando" e botões Confirmar/Cancelar');
 
     partidas.definirRegras(db2, partidaId, 'Regra combinada: sem emulador, gelo infinito', 'j1');
     partidas.confirmar(db2, partidaId, 'j1');
@@ -489,6 +493,21 @@ function resposta(interaction) {
     assert.ok(mensagens[0].payload.components[0].toJSON().components[0].custom_id.includes(':10000:'));
     passar('fila: 15 mensagens separadas, do maior preço (topo) ao menor (última, embaixo)');
 
+    // card minimalista: título "1v1 Mobile | R$ 0,50" + campo Jogadores
+    const cardVazio = paineis.mensagemPreco(modo, 50, []).embeds[0].toJSON();
+    assert.strictEqual(cardVazio.title, '1v1 Mobile | R$ 0,50');
+    assert.strictEqual(cardVazio.description, undefined, 'sem textão explicativo');
+    assert.strictEqual(cardVazio.footer, undefined, 'sem rodapé');
+    assert.deepStrictEqual(cardVazio.fields.map((campo) => campo.name), ['Jogadores']);
+    assert.strictEqual(cardVazio.fields[0].value, 'Nenhum jogador na fila.');
+
+    const cardComJogador = paineis
+      .mensagemPreco(modo, 50, [{ preco: 50, gelo: 'normal', user_id: 'j1' }])
+      .embeds[0]
+      .toJSON();
+    assert.strictEqual(cardComJogador.fields[0].value, 'Gelo Normal | <@j1>');
+    passar('fila: card minimalista, "Nenhum jogador na fila." e "Gelo Normal | <@id>"');
+
     // canal da fila nasce logo abaixo do canal de referência
     const { client: clienteFila, guild: guildFila } = ambienteFalso();
     const referenciaFila = await guildFila.channels.create({ name: '🎯・AP' });
@@ -521,42 +540,38 @@ function resposta(interaction) {
     const mobile = paineis.componentesEntrada(modo, 250)[0].toJSON().components;
     assert.deepStrictEqual(
       mobile.map((botao) => botao.custom_id),
-      [
-        'ap:entrar:x1mobile:250:infinito',
-        'ap:entrar:x1mobile:250:normal',
-        'ap:sair:x1mobile:250',
-        'ap:como',
-      ],
+      ['ap:entrar:x1mobile:250:infinito', 'ap:entrar:x1mobile:250:normal', 'ap:como'],
     );
-    assert.deepStrictEqual(mobile.map((botao) => botao.label), [
-      'Gelo Infinito',
-      'Gelo Normal',
-      'Sair',
-      'Como funciona',
+    assert.deepStrictEqual(mobile.map((botao) => botao.label), ['Gelo Infinito', 'Gelo Normal', 'Como funciona']);
+    passar('cards mobile: Gelo Infinito · Gelo Normal (sem "Sair" no card público)');
+
+    // "Sair" é dinâmico: só aparece para quem está naquela faixa (efêmero)
+    const comSair = paineis.componentesEntrada(modo, 250, { sair: true })[0].toJSON().components;
+    assert.deepStrictEqual(comSair.map((botao) => botao.custom_id), [
+      'ap:entrar:x1mobile:250:infinito',
+      'ap:entrar:x1mobile:250:normal',
+      'ap:sair:x1mobile:250',
+      'ap:como',
     ]);
-    passar('cards mobile: Gelo Infinito · Gelo Normal · Sair · Como funciona');
+    assert.strictEqual(paineis.linhaSair(modo, 250).toJSON().components[0].custom_id, 'ap:sair:x1mobile:250');
+    passar('cards: botão "Sair" só aparece para quem está na fila daquela faixa');
 
     const emu = paineis.componentesEntrada(config.modoPorId('x2emu'), 500)[0].toJSON().components;
-    assert.deepStrictEqual(emu.map((botao) => botao.label), [
-      'Normal',
-      'Full UMP e XM8',
-      'Sair',
-      'Como funciona',
-    ]);
+    assert.deepStrictEqual(emu.map((botao) => botao.label), ['Normal', 'Full UMP e XM8', 'Como funciona']);
     const capa = paineis.componentesEntrada(config.modoPorId('x1fullcapa'), 500)[0].toJSON().components;
-    assert.deepStrictEqual(capa.map((botao) => botao.label), ['Full Capa', 'Sair', 'Como funciona']);
+    assert.deepStrictEqual(capa.map((botao) => botao.label), ['Full Capa', 'Como funciona']);
     passar('cards emu e full capa: botões certos em cada categoria');
 
     const misto = ['x2misto', 'x3misto', 'x4misto'].map(
       (id) => paineis.componentesEntrada(config.modoPorId(id), 1000)[0].toJSON().components,
     );
-    assert.deepStrictEqual(misto[0].map((botao) => botao.label), ['1 Emu', 'Sair']);
-    assert.deepStrictEqual(misto[1].map((botao) => botao.label), ['1 Emu', '2 Emu', 'Sair']);
-    assert.deepStrictEqual(misto[2].map((botao) => botao.label), ['1 Emu', '2 Emu', '3 Emu', 'Sair']);
+    assert.deepStrictEqual(misto[0].map((botao) => botao.label), ['1 Emu']);
+    assert.deepStrictEqual(misto[1].map((botao) => botao.label), ['1 Emu', '2 Emu']);
+    assert.deepStrictEqual(misto[2].map((botao) => botao.label), ['1 Emu', '2 Emu', '3 Emu']);
     for (const linha of misto) {
       assert.ok(!linha.some((botao) => /Como funciona/.test(botao.label)), 'misto sem "Como funciona"');
     }
-    passar('cards misto: 1/2/3 Emu + Sair, sem "Como funciona"');
+    passar('cards misto: 1/2/3 Emu, sem "Como funciona"');
 
     assert.strictEqual(config.MODOS.length, 15);
     const titulos = config.MODOS.map((m) => m.titulo);
@@ -564,6 +579,66 @@ function resposta(interaction) {
       assert.ok(titulos.includes(esperado), `faltou o modo ${esperado}`);
     }
     passar('modos: os 15 painéis existem com os títulos certos');
+  }
+
+  // ---------- matchmaking: sala abaixo da referência + confirmação pública ----------
+  {
+    const { client, guild } = ambienteFalso();
+    const db3 = abrirBanco(path.join(pasta, 'match.db'));
+
+    const referencia = await guild.channels.create({ name: '🎯・AP' });
+    referencia.position = 6;
+    const referenciaAntes = config.CANAL_FILA_ID;
+    config.CANAL_FILA_ID = referencia.id;
+
+    filas.entrar(db3, { guildId: guild.id, modo: 'x1mobile', preco: 50, gelo: 'normal', userId: 'k1' });
+    const fechou = await fluxo.entrarNaFila(client, db3, {
+      guild,
+      userId: 'k2',
+      modo: 'x1mobile',
+      preco: 50,
+      gelo: 'normal',
+    });
+    config.CANAL_FILA_ID = referenciaAntes;
+
+    assert.strictEqual(fechou.fechou, true);
+    const sala = client.channels.cache.get(fechou.canalId);
+    assert.strictEqual(sala.name, 'fila-gelo-normal-001');
+    assert.strictEqual(sala.parentId, null, 'sala fora de categoria');
+    assert.strictEqual(sala.posicao, 7, 'logo abaixo do canal de referência');
+
+    const cardSala = sala.enviadas[0].payload.embeds[0].toJSON();
+    assert.ok(cardSala.title.includes('Aguardando'));
+    assert.ok(cardSala.title.includes('1v1 Mobile Gelo Normal'));
+    const camposSala = Object.fromEntries(cardSala.fields.map((campo) => [campo.name, campo.value]));
+    assert.strictEqual(camposSala.Aposta, 'R$ 0,50');
+    assert.ok(camposSala.Jogadores.includes('1. <@k1>'), camposSala.Jogadores);
+    assert.ok(camposSala.Jogadores.includes('2. <@k2>'), camposSala.Jogadores);
+    passar('matchmaking: sala #fila-gelo-normal-001 abaixo da referência com card "Aguardando"');
+
+    const { handleBotao: cliqueBotao } = require('../src/interacoes/botoes');
+    const confirmar1 = fakeInteraction({ userId: 'k1' });
+    confirmar1.customId = `ap:confirmar:${fechou.partida.id}`;
+    confirmar1.isButton = () => true;
+    confirmar1.guild = guild;
+    await cliqueBotao(confirmar1, { db: db3, client });
+
+    const aviso1 = String(sala.enviadas.at(-1)?.payload?.content || '');
+    assert.ok(aviso1.includes('<@k1> confirmou a partida'), aviso1);
+    assert.ok(aviso1.includes('Agora falta apenas <@k2> para confirmar'), aviso1);
+    passar('matchmaking: 1ª confirmação avisa publicamente quem falta');
+
+    const confirmar2 = fakeInteraction({ userId: 'k2' });
+    confirmar2.customId = `ap:confirmar:${fechou.partida.id}`;
+    confirmar2.isButton = () => true;
+    confirmar2.guild = guild;
+    await cliqueBotao(confirmar2, { db: db3, client });
+
+    const aviso2 = String(sala.enviadas.at(-1)?.payload?.content || '');
+    assert.ok(aviso2.includes('<@k2> confirmou a partida'), aviso2);
+    assert.ok(aviso2.includes('Todos confirmaram! Partida iniciando...'), aviso2);
+    assert.strictEqual(partidas.buscar(db3, fechou.partida.id).status, 'aguardando_mediador');
+    passar('matchmaking: 2ª confirmação libera "Todos confirmaram! Partida iniciando..."');
   }
 
   // ---------- comandos ----------
@@ -575,7 +650,7 @@ function resposta(interaction) {
       'boombot', 'conectar', 'convites', 'desconectar', 'enviar_dm', 'envio_massa', 'limpar',
       'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'pix', 'ranking',
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
-      'vencedor', 'vitoria', 'wo', 'nix',
+      'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
     ];
     for (const nome of obrigatorios) {
       assert.ok(nomes.includes(nome), `faltou o comando /${nome}`);
@@ -584,9 +659,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 49);
-    assert.strictEqual(new Set(nomes).size, 49, 'nome de comando repetido');
-    passar('comandos: 49 registrados (34 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 51);
+    assert.strictEqual(new Set(nomes).size, 51, 'nome de comando repetido');
+    passar('comandos: 51 registrados (36 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(
@@ -674,6 +749,56 @@ function resposta(interaction) {
     });
     assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_fila', null), 'canal-ref-fila');
     passar('/boombot setfila: salva o canal de referência das filas');
+
+    // /botperfil: painel ADM para trocar nome, avatar, descrição e status
+    const botperfil = fakeInteraction({
+      commandName: 'botperfil',
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(botperfil, { db, client: null });
+    assert.deepStrictEqual(
+      resposta(botperfil).components[0].toJSON().components.map((botao) => botao.custom_id),
+      ['ap:botnome', 'ap:botavatar', 'ap:botdescricao', 'ap:botstatus'],
+    );
+    assert.strictEqual(resposta(botperfil).flags & 64, 64, 'painel só para o ADM');
+    const semAdmPerfil = fakeInteraction({ commandName: 'botperfil' });
+    await comandos.executar(semAdmPerfil, { db, client: null });
+    assert.ok(resposta(semAdmPerfil).embeds[0].toJSON().description.includes('ADM'));
+    passar('/botperfil: só ADM recebe o painel de nome/avatar/descrição/status');
+
+    // modais do /botperfil aplicam no perfil do bot
+    const clientePerfil = {
+      user: {
+        id: 'bot',
+        async setUsername(nome) {
+          clientePerfil.nome = nome;
+        },
+        async setAvatar(url) {
+          clientePerfil.avatar = url;
+        },
+        setPresence(presenca) {
+          clientePerfil.presenca = presenca;
+        },
+      },
+      application: {
+        async edit(dados) {
+          clientePerfil.app = dados;
+        },
+      },
+    };
+    const { handleModal } = require('../src/interacoes/modais');
+    const modalNome = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator] });
+    modalNome.customId = 'ap:modalbotnome';
+    modalNome.fields = { getTextInputValue: () => 'Royal AP Bot' };
+    await handleModal(modalNome, { db, client: clientePerfil });
+    assert.strictEqual(clientePerfil.nome, 'Royal AP Bot');
+
+    const modalDescricao = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator] });
+    modalDescricao.customId = 'ap:modalbotdescricao';
+    modalDescricao.fields = { getTextInputValue: () => 'Filas e apostas da ORG' };
+    await handleModal(modalDescricao, { db, client: clientePerfil });
+    assert.strictEqual(clientePerfil.app.description, 'Filas e apostas da ORG');
+    passar('/botperfil: modal grava nome e descrição no bot sem token');
 
     // /ticket: Central de Atendimento efêmera, apaga em 15s
     const ticket = fakeInteraction({ commandName: 'ticket' });

@@ -21,7 +21,7 @@ const {
 } = require('discord.js');
 const config = require('../config');
 const { obterConfig } = require('../db');
-const { embed, reais, listaUsuarios } = require('../util/embeds');
+const { embed, reais, mencao, tituloCurto, listaUsuarios } = require('../util/embeds');
 const filasServico = require('./filas');
 
 /** Preços do maior para o menor: é essa a ordem em que as mensagens saem. */
@@ -42,7 +42,7 @@ function linhaDePreco(modo, preco, entradas) {
   const { doPreco, variantes } = linhasDeEntrada(modo, preco, entradas);
   return {
     name: `💵 ${reais(preco)} · ${doPreco.length} na fila`,
-    value: variantes.join('\n') || '`fila vazia`',
+    value: variantes.join('\n') || 'Nenhum jogador na fila.',
     inline: false,
   };
 }
@@ -102,7 +102,7 @@ function componentesPainel(modo) {
  *  fullcapa → Full Capa · Sair · Como funciona
  *  misto    → 1 Emu (2 Emu, 3 Emu conforme o time) · Sair  (sem "Como funciona")
  */
-function componentesEntrada(modo, preco) {
+function componentesEntrada(modo, preco, opcoes = {}) {
   const estilos = [ButtonStyle.Primary, ButtonStyle.Success, ButtonStyle.Secondary];
   const botoes = config.variantesDoModo(modo).map((variante, indice) =>
     new ButtonBuilder()
@@ -112,13 +112,9 @@ function componentesEntrada(modo, preco) {
       .setStyle(estilos[indice] || ButtonStyle.Secondary),
   );
 
-  botoes.push(
-    new ButtonBuilder()
-      .setCustomId(`ap:sair:${modo.id}:${preco}`)
-      .setLabel('Sair')
-      .setEmoji('❌')
-      .setStyle(ButtonStyle.Danger),
-  );
+  // O card é uma mensagem pública (igual para todos), então o "Sair" só entra
+  // na resposta EFÊMERA de quem está naquela fila (opcoes.sair = true).
+  if (opcoes.sair) botoes.push(botaoSair(modo, preco));
 
   if (config.mostrarComoFunciona(modo)) {
     botoes.push(
@@ -133,23 +129,45 @@ function componentesEntrada(modo, preco) {
   return [new ActionRowBuilder().addComponents(...botoes)];
 }
 
-/** UMA mensagem da fila: só a faixa de preço dela, com os botões dela. */
+/** Botão "Sair" de uma faixa (só aparece para quem está naquela fila). */
+function botaoSair(modo, preco) {
+  return new ButtonBuilder()
+    .setCustomId(`ap:sair:${modo.id}:${preco}`)
+    .setLabel('Sair da fila')
+    .setEmoji('❌')
+    .setStyle(ButtonStyle.Danger);
+}
+
+/** Linha pronta com o "Sair" para a resposta efêmera de quem entrou. */
+function linhaSair(modo, preco) {
+  return new ActionRowBuilder().addComponents(botaoSair(modo, preco));
+}
+
+/** Jogadores de uma faixa no formato limpo: "Gelo Normal | <@id>". */
+function jogadoresDaFaixa(modo, preco, entradas = []) {
+  return entradas
+    .filter((linha) => Number(linha.preco) === Number(preco))
+    .map((linha) => `${config.varianteDoModo(modo, linha.gelo)?.nome ?? linha.gelo} | ${mencao(linha.user_id)}`);
+}
+
+/**
+ * UMA mensagem da fila: card minimalista com o título do modo + valor e o
+ * campo Jogadores. Sem textão explicativo e sem rodapé pesado.
+ */
 function mensagemPreco(modo, preco, entradas = []) {
-  const { doPreco, variantes } = linhasDeEntrada(modo, preco, entradas);
-  const corpo = [
-    `${modo.titulo} · fecha com **${modo.jogadores}** jogadores (${modo.time}x${modo.time})`,
-    '',
-    ...(variantes.length ? variantes : ['`fila vazia`']),
-    '',
-    `**Aposta desta faixa:** ${reais(preco)} · **Na fila:** ${doPreco.length}/${modo.jogadores}`,
-    '_Entre pelo botão da sua categoria. Grupo fechado = sala privada automática._',
-  ].join('\n');
+  const jogadores = jogadoresDaFaixa(modo, preco, entradas);
 
   return {
     embeds: [
-      embed(`💵 ${reais(preco)} · AP ${modo.titulo}`, corpo, {
+      embed(`${tituloCurto(modo)} | ${reais(preco)}`, null, {
         cor: config.CORES.principal,
-        rodape: `ORG Royal AP · ${reais(preco)}`,
+        campos: [
+          {
+            name: 'Jogadores',
+            value: jogadores.length ? jogadores.join('\n') : 'Nenhum jogador na fila.',
+            inline: false,
+          },
+        ],
       }),
     ],
     components: componentesEntrada(modo, preco),
@@ -304,6 +322,35 @@ async function posicionarAbaixo(canal, referencia) {
 
 const nomeCanalFila = (modo) => `fila-${modo.id}`.toLowerCase().slice(0, 95);
 
+/** "Gelo Normal" -> "gelo-normal" */
+function slug(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Nome da sala privada da partida: #fila-gelo-normal-001, #fila-gelo-normal-002…
+ * A numeração continua de onde parou (mesmo padrão do exemplo fila-gelo-normal-069).
+ */
+function nomeSalaFila(guild, modo, gelo) {
+  const variante = config.varianteDoModo(modo, gelo);
+  const base = `fila-${slug(variante?.nome ?? gelo) || 'ap'}`.slice(0, 90);
+  const canais = guild?.channels?.cache?.filter?.((canal) => String(canal.name || '').startsWith(`${base}-`));
+
+  let maior = 0;
+  if (canais) {
+    for (const canal of canais.values()) {
+      const numero = Number(String(canal.name).slice(base.length + 1));
+      if (Number.isFinite(numero) && numero > maior) maior = numero;
+    }
+  }
+  return `${base}-${String(maior + 1).padStart(3, '0')}`;
+}
+
 /**
  * Garante o canal da fila do modo: reutiliza se já existe, senão cria e
  * posiciona logo abaixo do canal de referência.
@@ -334,6 +381,9 @@ module.exports = {
   componentesPainel,
   componentesEntrada,
   componentesGelo: componentesEntrada,
+  linhaSair,
+  jogadoresDaFaixa,
+  nomeSalaFila,
   mensagemPreco,
   mensagensFila,
   mensagemPainel,
