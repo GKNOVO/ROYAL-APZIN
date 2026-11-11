@@ -743,13 +743,16 @@ function resposta(interaction) {
       primeiro.isButton = () => true;
       await handleBotao(primeiro, { db: dbCnt, client });
 
-      const resposta1 = resposta(primeiro);
-      const texto1 = resposta1.embeds[0].toJSON().description;
+      const card1 = resposta(primeiro);
+      const embed1 = card1.embeds[0].toJSON();
+      const campo1 = embed1.fields.find((campo) => campo.name === 'Jogadores').value;
       assert.ok(
-        texto1.includes('**Faltam:** 1 jogador(es) para fechar.'),
-        `${modoId}: o 1º jogador precisa ver que falta 1, veio: ${texto1}`,
+        campo1.includes(`<@${modoId}-c1>`),
+        `${modoId}: o nome do jogador precisa aparecer no card, veio: ${campo1}`,
       );
-      assert.ok(!resposta1.components?.length, `${modoId}: Sair não fica mais na resposta efêmera`);
+      const ids1 = card1.components[0].toJSON().components.map((botao) => botao.custom_id);
+      assert.ok(ids1.includes(`ap:sair:${modoId}:${preco}`), `${modoId}: Sair precisa entrar no card com jogador`);
+      assert.ok(!primeiro.chamadas.followUp && !primeiro.chamadas.reply, `${modoId}: sem resposta efêmera ao entrar`);
 
       const segundo = fakeInteraction({ userId: `${modoId}-c2`, guildId: guild.id });
       segundo.guild = guild;
@@ -757,11 +760,54 @@ function resposta(interaction) {
       segundo.isButton = () => true;
       await handleBotao(segundo, { db: dbCnt, client });
 
-      const texto2 = resposta(segundo).embeds[0].toJSON().description;
-      assert.ok(/Grupo fechado|sala privada/i.test(texto2), `${modoId}: o 2º jogador fecha a sala, veio: ${texto2}`);
+      const total = dbCnt
+        .prepare('SELECT COUNT(*) AS total FROM partidas WHERE guild_id = ? AND modo = ?')
+        .get(guild.id, modoId).total;
+      assert.strictEqual(total, 1, `${modoId}: o 2º jogador precisa criar a partida`);
+      assert.ok(!segundo.chamadas.followUp && !segundo.chamadas.reply, `${modoId}: sem efêmera ao fechar`);
     }
-    passar('contador: 2x2, 4x4 e full capa mostram "Faltam: 1" e fecham no 2º jogador');
+    passar('cards: nome aparece na hora, Sair entra só na faixa com jogador e sem efêmera');
     dbCnt.close();
+  }
+
+  // ---------- Sair pelo card ----------
+  {
+    const { client, guild } = ambienteFalso();
+    const dbS = abrirBanco(path.join(pasta, 'sair-card.db'));
+    const { handleBotao } = require('../src/interacoes/botoes');
+    const clicar = async (userId, customId) => {
+      const interacao = fakeInteraction({ userId, guildId: guild.id });
+      interacao.guild = guild;
+      interacao.customId = customId;
+      interacao.isButton = () => true;
+      await handleBotao(interacao, { db: dbS, client });
+      return interacao;
+    };
+
+    const entrou = await clicar('s1', 'ap:entrar:x2mobile:50:normal');
+    const cardEntrou = resposta(entrou).embeds[0].toJSON();
+    assert.ok(cardEntrou.fields[0].value.includes('<@s1>'), 'nome no card ao entrar');
+    assert.ok(
+      resposta(entrou).components[0].toJSON().components.some((b) => b.custom_id === 'ap:sair:x2mobile:50'),
+      'Sair presente com 1 jogador',
+    );
+
+    const saiu = await clicar('s1', 'ap:sair:x2mobile:50');
+    const cardSaiu = resposta(saiu).embeds[0].toJSON();
+    assert.strictEqual(cardSaiu.fields[0].value, 'Nenhum jogador na fila.');
+    assert.ok(
+      !resposta(saiu).components[0].toJSON().components.some((b) => b.custom_id === 'ap:sair:x2mobile:50'),
+      'Sair removido do card vazio',
+    );
+    assert.ok(!saiu.chamadas.followUp && !saiu.chamadas.reply, 'sem efêmera ao sair');
+
+    // Quem não está na fila recebe aviso efêmero e não remove a vaga de ninguém.
+    await clicar('s1', 'ap:entrar:x2mobile:50:normal');
+    const estranho = await clicar('s2', 'ap:sair:x2mobile:50');
+    assert.strictEqual(filas.contar(dbS, { guildId: guild.id, modo: 'x2mobile', preco: 50, gelo: 'normal' }), 1);
+    assert.ok(estranho.chamadas.followUp, 'estranho recebe aviso efêmero');
+    passar('Sair do card: entra com nome + Sair, sai e limpa; estranho só recebe aviso efêmero');
+    dbS.close();
   }
 
   // ---------- mediação: configuração, plantão, PIX, telagem e /verp ----------

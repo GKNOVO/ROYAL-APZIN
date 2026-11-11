@@ -55,13 +55,37 @@ async function avisarConfirmacao(client, db, { partida, userId, completo, faltan
   }
 }
 
+/**
+ * Edita o PRÓPRIO card que o jogador clicou (não depende do ID salvo no banco).
+ * É isso que garante o nome aparecendo na hora e o Sair só nesta faixa.
+ */
+async function atualizarCardDoClique(interaction, db, modo, preco) {
+  const valor = Number(preco);
+  if (!config.PRECOS.includes(valor)) return false;
+  try {
+    const entradas = filas.listar(db, { guildId: interaction.guildId, modo: modo.id });
+    const card = paineis.mensagemPreco(modo, valor, entradas);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(card);
+    } else if (typeof interaction.update === 'function') {
+      await interaction.update(card);
+    } else {
+      await interaction.editReply(card);
+    }
+    return true;
+  } catch (erro) {
+    console.error('[botoes] não consegui editar o card da fila:', erro.message);
+    return false;
+  }
+}
+
 async function entrarNaFilaBotao(interaction, { db, client }, modoId, preco, gelo) {
   if (!interaction.guild) return responderErro(interaction, 'Use os painéis dentro do servidor.');
   const modo = config.modoPorId(modoId);
   if (!modo) return responderErro(interaction, 'Painel antigo. Peça para a staff publicar o painel de novo.');
 
   try {
-    const resultado = await fluxo.entrarNaFila(client, db, {
+    await fluxo.entrarNaFila(client, db, {
       guild: interaction.guild,
       userId: interaction.user.id,
       modo: modo.id,
@@ -69,26 +93,9 @@ async function entrarNaFilaBotao(interaction, { db, client }, modoId, preco, gel
       gelo,
     });
 
-    if (resultado.fechou) {
-      return responderPrivado(interaction, {
-        embeds: [
-          embedSucesso(
-            `Grupo fechado! 🎉\nSua sala privada foi criada: <#${resultado.canalId}>\n\n` +
-              'Vão lá para enviar a regra, confirmar e chamar o mediador.',
-          ),
-        ],
-      });
-    }
-
-    return responderPrivado(interaction, {
-      embeds: [
-        embedSucesso(
-          `Você entrou na fila!\n**Modo:** ${modo.titulo}\n**Aposta:** ${reais(Number(preco))} · ${varianteNome(modo, gelo)}\n` +
-            `**Posição:** ${resultado.posicao}\n**Faltam:** ${resultado.faltam} jogador(es) para fechar.`,
-        ),
-      ],
-      // O "Sair da fila" fica no card da própria faixa, ao lado de "Como funciona".
-    });
+    // Sem mensagem efêmera: o clique edita o card do painel na hora.
+    await atualizarCardDoClique(interaction, db, modo, Number(preco));
+    return true;
   } catch (erro) {
     if (/já está nessa fila/i.test(String(erro.message))) {
       return responderPrivado(interaction, { embeds: [embedErro(erro.message)] });
@@ -110,9 +117,9 @@ async function sairDaFila(interaction, { db, client }, modoId, alvo) {
   });
   if (!removidas) return responderErro(interaction, 'Você não está nessa fila.');
   await paineis.atualizar(client, db, { guildId: interaction.guildId, modo: modo.id, preco });
-  return responderPrivado(interaction, {
-    embeds: [embedSucesso(`Você saiu da fila de **${modo.titulo}**${preco ? ` (${reais(preco)})` : ''}.`)],
-  });
+  // Sem mensagem extra: o próprio card volta para "Nenhum jogador" e perde o Sair.
+  await atualizarCardDoClique(interaction, db, modo, preco);
+  return true;
 }
 
 async function confirmarRegras(interaction, { db, client }, partidaId) {
