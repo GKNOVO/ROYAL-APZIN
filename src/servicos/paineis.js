@@ -8,8 +8,10 @@
  * canal e os valores vão subindo conforme você rola para cima — exatamente o
  * layout combinado com a ORG.
  *
- * Os canais das filas NÃO nascem mais dentro de categoria: eles nascem logo
- * ABAIXO do canal de referência (CANAL_FILA_ID no .env ou `/boombot setfila`).
+ * O comando `/filas…` publica as 15 mensagens no canal onde foi executado —
+ * NÃO cria canal. Quem cria canal é o matchmaking: quando a fila fecha, a sala
+ * privada da partida nasce logo ABAIXO do canal de referência (CANAL_FILA_ID no
+ * .env ou `/boombot setfila`).
  */
 
 const {
@@ -17,7 +19,6 @@ const {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
 } = require('discord.js');
 const config = require('../config');
 const { obterConfig } = require('../db');
@@ -308,19 +309,29 @@ async function canalDeReferencia(guild, db, chave = 'canal_fila', envId = config
   return (await guild.channels.fetch(id).catch(() => null)) || null;
 }
 
-/** Coloca o canal logo ABAIXO do canal de referência. */
+/**
+ * Coloca o canal EXATAMENTE na posição logo abaixo do canal de referência
+ * (referencia.position + 1), independente do que existe abaixo dele.
+ */
 async function posicionarAbaixo(canal, referencia) {
   if (!canal || !referencia || typeof canal.setPosition !== 'function') return false;
+
+  let base = Number(referencia.position);
+  if (!Number.isFinite(base)) {
+    // Canal veio sem position no cache: busca fresquinho no Discord.
+    const atual = await referencia.guild?.channels?.fetch?.(referencia.id, { force: true }).catch(() => null);
+    base = Number(atual?.position);
+  }
+  if (!Number.isFinite(base)) base = 0;
+
   try {
-    await canal.setPosition(Number(referencia.position ?? 0) + 1);
+    await canal.setPosition(base + 1);
     return true;
   } catch (erro) {
     console.warn(`[paineis] não consegui posicionar ${canal.name} abaixo de ${referencia.name}:`, erro.message);
     return false;
   }
 }
-
-const nomeCanalFila = (modo) => `fila-${modo.id}`.toLowerCase().slice(0, 95);
 
 /** "Gelo Normal" -> "gelo-normal" */
 function slug(texto) {
@@ -351,30 +362,6 @@ function nomeSalaFila(guild, modo, gelo) {
   return `${base}-${String(maior + 1).padStart(3, '0')}`;
 }
 
-/**
- * Garante o canal da fila do modo: reutiliza se já existe, senão cria e
- * posiciona logo abaixo do canal de referência.
- * Devolve { canal, referencia, criado, motivo }.
- */
-async function garantirCanalFila(guild, db, modo) {
-  const referencia = await canalDeReferencia(guild, db);
-  if (!referencia) return { canal: null, referencia: null, criado: false, motivo: 'sem-canal-referencia' };
-
-  const nome = nomeCanalFila(modo);
-  const existente = guild.channels.cache.find(
-    (canal) => canal.name === nome && canal.type === ChannelType.GuildText,
-  );
-  if (existente) return { canal: existente, referencia, criado: false, motivo: null };
-
-  const canal = await guild.channels.create({
-    name: nome,
-    type: ChannelType.GuildText,
-    topic: `Fila de AP ${modo.titulo} · ORG Royal AP`,
-  });
-  await posicionarAbaixo(canal, referencia);
-  return { canal, referencia, criado: true, motivo: null };
-}
-
 module.exports = {
   PRECOS_ENVIO,
   embedPainel,
@@ -396,5 +383,4 @@ module.exports = {
   atualizar,
   canalDeReferencia,
   posicionarAbaixo,
-  garantirCanalFila,
 };

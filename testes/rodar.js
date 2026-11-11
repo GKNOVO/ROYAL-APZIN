@@ -508,27 +508,21 @@ function resposta(interaction) {
     assert.strictEqual(cardComJogador.fields[0].value, 'Gelo Normal | <@j1>');
     passar('fila: card minimalista, "Nenhum jogador na fila." e "Gelo Normal | <@id>"');
 
-    // canal da fila nasce logo abaixo do canal de referência
+    // publicação: 15 mensagens no canal ATUAL, sem criar canal nenhum
     const { client: clienteFila, guild: guildFila } = ambienteFalso();
-    const referenciaFila = await guildFila.channels.create({ name: '🎯・AP' });
-    referenciaFila.position = 2;
-    const referenciaAntiga = config.CANAL_FILA_ID;
-    config.CANAL_FILA_ID = referenciaFila.id;
+    const canalFila = await guildFila.channels.create({ name: '⚡╸royal' });
+    const canaisAntes = guildFila.channels.cache.size;
 
-    const canalFila = await paineis.garantirCanalFila(guildFila, db, modo);
-    assert.ok(canalFila.canal, 'canal da fila criado');
-    assert.strictEqual(canalFila.canal.posicao, 3, 'canal logo abaixo do canal de referência');
-
-    const enviadas = await paineis.publicarFila(db, canalFila.canal, { guildId: 'g1', modo, entradas: [] });
+    const enviadas = await paineis.publicarFila(db, canalFila, { guildId: 'g1', modo, entradas: [] });
     assert.strictEqual(enviadas.length, 15);
-    assert.strictEqual(canalFila.canal.enviadas.length, 15, '15 mensagens no canal da fila');
+    assert.strictEqual(canalFila.enviadas.length, 15, '15 mensagens no canal atual');
+    assert.strictEqual(guildFila.channels.cache.size, canaisAntes, 'nenhum canal novo criado');
     assert.strictEqual(paineis.mensagensSalvas(db, { guildId: 'g1', modo: 'x1mobile' }).length, 15);
     assert.strictEqual(
       await paineis.atualizar(clienteFila, db, { guildId: 'g1', modo: 'x1mobile', preco: 50 }),
       true,
     );
-    config.CANAL_FILA_ID = referenciaAntiga;
-    passar('fila: canal abaixo da referência, 15 mensagens publicadas e atualizadas');
+    passar('fila: 15 mensagens no canal atual, sem criar canal novo');
 
     const menu = painel.components[0].toJSON().components[0];
     assert.strictEqual(menu.custom_id, 'ap:preco:x1mobile');
@@ -878,6 +872,12 @@ function resposta(interaction) {
       name: 'filas aqui',
       type: ChannelType.GuildCategory,
     });
+    // categoria "de atendimento" no servidor: mesmo assim NÃO pode ser usada
+    guildSem.channels.cache.set('cat-suporte', {
+      id: 'cat-suporte',
+      name: 'suporte',
+      type: ChannelType.GuildCategory,
+    });
     guildSem.channels.fetch = async (id) => guildSem.channels.cache.get(id) ?? null;
     const suporteAntigo = cfg.CATEGORIA_SUPORTE_ID;
     cfg.CATEGORY_TICKETS_ID = '';
@@ -888,8 +888,8 @@ function resposta(interaction) {
     );
     cfg.CATEGORY_TICKETS_ID = categoriaAntiga;
     cfg.CATEGORIA_SUPORTE_ID = suporteAntigo;
-    assert.strictEqual(semCategoria.canal.parentId, null, 'não invade a categoria de filas');
-    passar('ticket: sem categoria configurada não invade a categoria das filas');
+    assert.strictEqual(semCategoria.canal.parentId, null, 'não invade categoria de filas nem "suporte"');
+    passar('ticket: sem ID configurado não cai em categoria aleatória');
 
     // Ticket por CANAL de referência: nasce fora de categoria, logo abaixo dele
     const { client: clientRef, guild: guildRef } = ambienteFalso();
@@ -1021,6 +1021,7 @@ function resposta(interaction) {
     await comandos.executar(comandoPainel, { db, client: clientePainel });
     assert.strictEqual(comandoPainel.chamadas.deferReply.flags, 64, 'respondeu antes de montar o painel');
     assert.strictEqual(canalPainel.enviadas.length, 15, '15 mensagens da fila publicadas');
+    assert.strictEqual(clientePainel.channels.cache.size, 0, 'o comando NÃO cria canal novo');
     assert.ok(canalPainel.enviadas[0].embeds[0].toJSON().title.includes('R$ 100,00'), 'maior aposta no topo');
     assert.ok(canalPainel.enviadas[14].embeds[0].toJSON().title.includes('R$ 0,50'), 'menor aposta na última');
     assert.ok(resposta(comandoPainel).embeds[0].toJSON().description.includes('15 mensagens'));
@@ -1107,6 +1108,28 @@ function resposta(interaction) {
     assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'destino_tickets'), 'cat-config');
     assert.ok(resposta(setticket).embeds[0].toJSON().description.includes('TICKETS'));
     passar('/boombot setticket: guarda categoria ou canal escolhido no banco');
+
+    // TICKET_CANAL_ID manda mais que categoria salva no banco
+    const { client: clientPrior, guild: guildPrior } = ambienteFalso();
+    const refPrior = await guildPrior.channels.create({ name: '📫・ticket' });
+    refPrior.position = 9;
+    const categoriaPrior = { id: 'cat-antiga', name: 'TICKETS', type: ChannelType.GuildCategory };
+    guildPrior.channels.cache.set(categoriaPrior.id, categoriaPrior);
+    guildPrior.channels.fetch = async (id) => guildPrior.channels.cache.get(id) ?? null;
+    require('../src/db').definirConfig(db, 'g1', 'destino_tickets', 'cat-antiga');
+
+    const cfg3 = require('../src/config');
+    const canalRefAntes = cfg3.TICKET_CANAL_ID;
+    cfg3.TICKET_CANAL_ID = refPrior.id;
+    const prioritario = await tickets.abrirTicket(
+      { guild: guildPrior, guildId: 'g1', user: { id: 'j11', username: 'jogador11', tag: 'jogador11#1' } },
+      { db, client: clientPrior, tipo: 'suporte' },
+    );
+    cfg3.TICKET_CANAL_ID = canalRefAntes;
+
+    assert.strictEqual(prioritario.canal.parentId, null, 'ignora a categoria do banco');
+    assert.strictEqual(prioritario.canal.posicao, 10, 'nasce logo abaixo do TICKET_CANAL_ID');
+    passar('ticket: TICKET_CANAL_ID vence a categoria do banco e nasce logo abaixo');
   }
 
   // ---------- integração Nix FF ----------

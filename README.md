@@ -162,10 +162,10 @@ clique com o botão direito no cargo/canal/categoria → **Copiar ID**.
 
 ### 3.1 Filas posicionadas abaixo de um canal
 
-Nada de categoria para as filas: defina o **canal de referência** (`CANAL_FILA_ID` no `.env` ou
+Nada de canal novo: defina o **canal de referência** (`CANAL_FILA_ID` no `.env` ou
 `/boombot setfila canal:#seu-canal`). Quando a staff roda `/filasx1mobile`, `/filasx4emu` etc.,
-o bot cria (ou reaproveita) o canal daquele modo **logo abaixo** do canal de referência e publica
-ali as **15 mensagens**, uma por faixa de aposta:
+o bot publica as **15 mensagens** (uma por faixa de aposta) **no próprio canal onde o comando foi
+executado** — o comando não cria canal nenhum:
 
 ```
 💵 R$ 100,00   ← primeira mensagem (topo)
@@ -185,7 +185,9 @@ aparece só na resposta efêmera de quem está naquela faixa — ninguém mais v
 ### 3.2 Tickets: canal de referência e aviso temporário
 
 Com `TICKET_CANAL_ID` (ou `/boombot setticket destino:#seu-canal`), o canal do ticket nasce **fora
-de categoria**, posicionado **logo abaixo** do canal de referência. Ao clicar em um botão da
+de categoria**, posicionado **logo abaixo** do canal de referência (`referencia.position + 1`). Esse
+ID tem prioridade sobre qualquer categoria — sem ele, o ticket nasce na raiz, nunca em categoria
+alatória. Ao clicar em um botão da
 Central de Atendimento, **nada é publicado no chat**: o jogador recebe apenas uma resposta
 efêmera (só ele vê) com o link do ticket e o botão **Ignorar mensagem**, que apaga esse aviso da
 tela dele.

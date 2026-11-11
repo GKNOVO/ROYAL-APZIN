@@ -3,10 +3,13 @@
 /**
  * Um comando de painel para cada um dos 15 modos de AP.
  *
- * Com CANAL_FILA_ID (ou `/boombot setfila`) configurado, o bot cria/reaproveita
- * o canal daquele modo LOGO ABAIXO do canal de referência e publica nele as 15
- * mensagens (uma por faixa de preço, a mais barata por último). Sem canal de
- * referência ele publica no canal onde o comando foi usado.
+ * O comando NÃO cria canal nenhum: publica as 15 mensagens (da maior aposta no
+ * topo até a menor na última, embaixo) direto no canal onde a staff executou o
+ * comando.
+ *
+ * Quem cria canal é o matchmaking: quando dois jogadores fecham a mesma faixa,
+ * o bot abre a sala privada da partida logo ABAIXO do canal de referência
+ * (CANAL_FILA_ID no .env ou `/boombot setfila`).
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -21,7 +24,7 @@ const comandos = config.MODOS.map((modo) => ({
   data: new SlashCommandBuilder()
     .setName(modo.comando)
     .setDescription(
-      `Publica a fila de AP ${modo.titulo} (${config.PRECOS.length} mensagens, de R$ 0,50 a R$ 100,00)`,
+      `Publica a fila de AP ${modo.titulo} NESTE canal (${config.PRECOS.length} mensagens, de R$ 0,50 a R$ 100,00)`,
     ),
 
   async executar(interaction, { db, client }) {
@@ -30,33 +33,13 @@ const comandos = config.MODOS.map((modo) => ({
     }
     if (!(await exigirStaff(interaction, 'Só a staff/ADM pode publicar painéis de AP.'))) return;
 
-    // O deferReply já foi feito pelo despachante (src/comandos/index.js).
-    const entradas = filas.listar(db, { guildId: interaction.guildId, modo: modo.id });
-
-    let canal = interaction.channel;
-    let referencia = null;
-    let criado = false;
-
-    try {
-      referencia = await paineis.canalDeReferencia(interaction.guild, db);
-      if (referencia) {
-        const alvo = await paineis.garantirCanalFila(interaction.guild, db, modo);
-        if (!alvo.canal) throw new Error('Não consegui preparar o canal da fila.');
-        canal = alvo.canal;
-        criado = alvo.criado;
-      }
-    } catch (erro) {
-      return responderErro(
-        interaction,
-        `Não consegui criar o canal da fila abaixo do canal de referência: ${erro.message}\n` +
-          'Confira se o bot tem **Gerenciar Canais** e se o ID do canal está certo.',
-      );
-    }
-
+    // Sempre o canal ATUAL do comando: o bot não cria nem move canal aqui.
+    const canal = interaction.channel;
     if (!canal || typeof canal.send !== 'function') {
       return responderErro(interaction, 'Use esse comando em um canal de texto.');
     }
 
+    const entradas = filas.listar(db, { guildId: interaction.guildId, modo: modo.id });
     const enviadas = await paineis.publicarFila(db, canal, {
       guildId: interaction.guildId,
       modo,
@@ -67,18 +50,15 @@ const comandos = config.MODOS.map((modo) => ({
       guildId: interaction.guildId,
       autorId: interaction.user.id,
       acao: 'Painel publicado',
-      detalhe: `${modo.titulo} em #${canal.name} · ${enviadas.length} mensagens`,
+      detalhe: `${modo.titulo} em #${canal.name || canal.id} · ${enviadas.length} mensagens`,
     });
-
-    const detalhe = referencia
-      ? `\nNasceu **logo abaixo** de <#${referencia.id}>${criado ? ' (canal criado agora)' : ' (canal já existia)'}.`
-      : '\n_Dica: defina o canal de referência com `/boombot setfila` para o bot posicionar a fila sozinho._';
 
     return responderPrivado(interaction, {
       embeds: [
         embedSucesso(
-          `✅ Fila **${modo.titulo}** publicada em <#${canal.id}> com **${enviadas.length} mensagens** ` +
-            `(menor valor por último, embaixo).${detalhe}`,
+          `✅ Fila **${modo.titulo}** publicada aqui em <#${canal.id}> com **${enviadas.length} mensagens** ` +
+            '(menor valor por último, embaixo).' +
+            '\n_Quando dois jogadores fecharem a mesma faixa, a sala privada nasce logo abaixo do canal de referência._',
         ),
       ],
     });

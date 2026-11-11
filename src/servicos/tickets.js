@@ -14,12 +14,12 @@
  *   ID de categoria → (compatibilidade) o canal do ticket é criado dentro dela.
  *
  * Ordem de busca (a primeira que existir vence):
- *   /boombot setticket (banco) → TICKET_DESTINO_ID → CATEGORY_TICKETS_ID →
- *   TICKET_CATEGORIA_ID → TICKET_CANAL_ID → categoria_tickets (banco) →
- *   CATEGORIA_SUPORTE_ID → categoria_suporte (banco) → categoria com nome de
- *   atendimento/suporte.
+ *   TICKET_CANAL_ID → canal_ticket/destino_tickets (banco) → TICKET_DESTINO_ID →
+ *   CATEGORY_TICKETS_ID → TICKET_CATEGORIA_ID → categoria_tickets (banco) →
+ *   CATEGORIA_SUPORTE_ID → categoria_suporte (banco).
  *
- * A categoria das FILAS de AP nunca é usada como fallback.
+ * Sem nada configurado o ticket nasce na raiz do servidor (sem categoria) —
+ * nunca em categoria "aleatória".
  */
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
@@ -171,11 +171,13 @@ async function buscarCanal(guild, id) {
 function candidatosTickets(guild, db) {
   const doBanco = (chave) => (db ? obterConfig(db, guild.id, chave, null) : null);
   return [
+    // O canal de referência do .env MANDA: o ticket nasce sempre abaixo dele.
+    config.TICKET_CANAL_ID,
+    doBanco('canal_ticket'),
     doBanco('destino_tickets'),
     config.TICKET_DESTINO_ID,
     config.CATEGORY_TICKETS_ID,
     config.TICKET_CATEGORIA_ID,
-    config.TICKET_CANAL_ID,
     doBanco('categoria_tickets'),
     config.CATEGORIA_SUPORTE_ID,
     doBanco('categoria_suporte'),
@@ -216,11 +218,8 @@ async function resolverDestinoTickets(guild, db) {
     );
   }
 
-  // Último recurso: categoria com nome de atendimento (nunca a das filas).
-  const categorias = guild.channels.cache.filter((canal) => canal.type === ChannelType.GuildCategory);
-  const achada = categorias.find((canal) => /(suporte|atendimento|tickets?|central)/i.test(canal.name)) || null;
-  if (achada) return { categoria: achada, canal: null, origem: 'nome' };
-
+  // Sem ID configurado o ticket não vai para categoria nenhuma: nasce na raiz
+  // (o aviso abaixo pede para configurar TICKET_CANAL_ID).
   return { categoria: null, canal: null, origem: null };
 }
 
@@ -264,8 +263,16 @@ function linhaFechar() {
  */
 async function posicionarAbaixo(canal, referencia) {
   if (!canal || !referencia || typeof canal.setPosition !== 'function') return false;
+
+  let base = Number(referencia.position);
+  if (!Number.isFinite(base)) {
+    const atual = await referencia.guild?.channels?.fetch?.(referencia.id, { force: true }).catch(() => null);
+    base = Number(atual?.position);
+  }
+  if (!Number.isFinite(base)) base = 0;
+
   try {
-    await canal.setPosition(Number(referencia.position ?? 0) + 1);
+    await canal.setPosition(base + 1);
     return true;
   } catch (erro) {
     console.warn(`[tickets] não consegui posicionar o ticket abaixo de ${referencia.name}:`, erro.message);
