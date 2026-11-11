@@ -177,7 +177,10 @@ const config = {
    *  • TELAGEM_URL_BASE        → base usada quando não há link fixo; gera no formato oficial
    */
   TELAGEM_LINK: texto(process.env.TELAGEM_LINK),
-  TELAGEM_URL_BASE: texto(process.env.TELAGEM_URL_BASE, 'https://meet.google.com'),
+  /** jitsi (padrão, sala exclusiva criada na hora) ou google (Meet). */
+  TELAGEM_PROVEDOR: texto(process.env.TELAGEM_PROVEDOR, 'jitsi').toLowerCase(),
+  /** Servidor do Jitsi (só usado quando o provedor é jitsi). */
+  TELAGEM_URL_BASE: texto(process.env.TELAGEM_URL_BASE, 'https://meet.jit.si'),
   /** Botão "Abrir Free Fire" que acompanha o ID/senha da sala. */
   FREE_FIRE_LINK: texto(process.env.FREE_FIRE_LINK, 'https://ff.garena.com/'),
 

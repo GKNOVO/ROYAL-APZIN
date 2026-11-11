@@ -781,15 +781,28 @@ function resposta(interaction) {
     // telagem
     const codigo = telagem.novoCodigo();
     assert.ok(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(codigo), codigo);
-    assert.ok(telagem.link(codigo).startsWith('https://meet.google.com/'), telagem.link(codigo));
+
+    // Código exclusivo e estável por canal/partida
+    const codigoSala = telagem.codigoDoCanal('g1', 'canal-xyz');
+    assert.ok(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(codigoSala), codigoSala);
+    assert.strictEqual(telagem.codigoDoCanal('g1', 'canal-xyz'), codigoSala, 'mesmo canal = mesma sala');
+    assert.notStrictEqual(
+      telagem.codigoDoCanal('g1', 'outro-canal'),
+      codigoSala,
+      'canais diferentes = salas diferentes',
+    );
     const painelTelagem = telagem.painel(codigo);
     assert.ok(painelTelagem.embeds[0].toJSON().title.includes('Sala de Telagem Criada'));
     assert.ok(painelTelagem.embeds[0].toJSON().description.includes(codigo));
     assert.strictEqual(painelTelagem.components[0].toJSON().components[0].style, 5, 'botão de link');
     passar('telagem: código 3-4-3, link da call e painel "Sala de Telagem Criada"');
 
-    // Link do Google Meet (fixo no .env ou colado no comando)
+    // Provedores: jitsi (sala criada na hora) e google (Meet), + link colado
+    assert.ok(telagem.link(codigo).includes('royal-ap-'), telagem.link(codigo));
+    const provedorAntes = config.TELAGEM_PROVEDOR;
+    config.TELAGEM_PROVEDOR = 'google';
     assert.ok(telagem.link(codigo).startsWith('https://meet.google.com/'), telagem.link(codigo));
+    config.TELAGEM_PROVEDOR = provedorAntes;
     assert.strictEqual(telagem.linkValido('https://evil.com/sala'), null, 'só aceita meet.google.com');
     const painelMeet = telagem.painel(codigo, { url: 'https://meet.google.com/abc-defg-hij' });
     assert.strictEqual(
@@ -835,6 +848,19 @@ function resposta(interaction) {
     assert.strictEqual(canalAvulso.enviadas.length, 1, 'publica o painel mesmo sem partida no canal');
     assert.ok(resposta(comandoAvulso).embeds[0].toJSON().description.includes('criada'));
     passar('/criar_telagem: funciona em qualquer canal da staff');
+
+    // /criar_telagem exige um dos cargos configurados (Mediador/ADM)
+    const semCargoTelagem = fakeInteraction({
+      commandName: 'criar_telagem',
+      userId: 'semcargo',
+      guildId: 'g1',
+      channel: canalAvulso,
+      channelId: canalAvulso.id,
+    });
+    await comandos.executar(semCargoTelagem, { db, client: clientAvulso });
+    assert.strictEqual(canalAvulso.enviadas.length, 1, 'nada publicado sem cargo');
+    assert.ok(resposta(semCargoTelagem).embeds[0].toJSON().description.includes('cargos'));
+    passar('/criar_telagem: bloqueia quem não tem cargo de mediador/ADM');
 
     // /verp
     const verp = fakeInteraction({ commandName: 'verp', options: { usuario: { id: 'u1', username: 'u1' } } });
@@ -927,6 +953,12 @@ function resposta(interaction) {
       ['chutar', 'criarsala', 'iniciar', 'jogador', 'liberar', 'resultado', 'status', 'statussala'],
     );
     passar('comandos: /nix com os 8 subcomandos da API de salas');
+
+    // Automação da Nix exige cargo configurado no módulo de mediadores
+    const nixSemCargo = fakeInteraction({ commandName: 'nix', options: { sub: 'criarsala' }, guildId: 'g1' });
+    await comandos.executar(nixSemCargo, { db, client: null });
+    assert.ok(resposta(nixSemCargo).embeds[0].toJSON().description.includes('cargos'));
+    passar('/nix criarsala: sem cargo configurado é bloqueado');
 
     const blacklistComando = definicoes.find((comando) => comando.name === 'blacklist');
     assert.deepStrictEqual(
@@ -1028,8 +1060,11 @@ function resposta(interaction) {
     });
     await comandos.executar(anuncio2, { db, client: null });
     assert.strictEqual(canalAnuncio2.enviadas.length, 1);
-    assert.strictEqual(canalAnuncio2.enviadas[0].content, 'Servidor em manutenção às 22h.');
-    passar('/anunciar2: manda o texto limpo direto no canal atual');
+    const embedAnuncio2 = canalAnuncio2.enviadas[0].embeds[0].toJSON();
+    assert.ok(embedAnuncio2.title.includes('Anúncio'));
+    assert.strictEqual(embedAnuncio2.description, 'Servidor em manutenção às 22h.');
+    assert.ok(embedAnuncio2.footer.text.includes('ORG Royal AP'));
+    passar('/anunciar2: texto no mesmo embed elegante do /anunciar');
 
     // Voz: sem conexão ativa, /tirarbotcall responde sem travar
     const tirarCall = fakeInteraction({
@@ -1309,6 +1344,31 @@ function resposta(interaction) {
     assert.strictEqual(partidas.buscar(db, partidaPix.id).pix_chave, 'pix@sala');
     assert.ok(pixCanal.enviadas.length >= 1, 'PIX publicado na sala');
     passar('/pix: mediador envia a chave na sala pelo comando');
+
+    // /pix em QUALQUER canal: acha a sala ativa do próprio mediador
+    db.prepare("UPDATE partidas SET status = 'finalizada' WHERE id = ?").run(partidaPix.id);
+    const partidaFora = partidas.criar(db, {
+      guildId: 'g1',
+      modo: 'x1mobile',
+      preco: 300,
+      gelo: 'normal',
+      canalId: 'canal-pix-fora',
+      jogadores: [{ userId: 'u3', time: 1 }, { userId: 'u4', time: 2 }],
+    });
+    partidas.confirmar(db, partidaFora.id, 'u3');
+    partidas.confirmar(db, partidaFora.id, 'u4');
+    partidas.assumir(db, partidaFora.id, 'u1', 0.05);
+    staff.registrarPix(db, { guildId: 'g1', userId: 'u1', chave: 'pix@fora', titular: 'U1' });
+
+    const pixFora = fakeInteraction({
+      commandName: 'pix',
+      userId: 'u1',
+      channelId: 'canal-aleatorio',
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(pixFora, { db, client: clientePix });
+    assert.strictEqual(partidas.buscar(db, partidaFora.id).pix_chave, 'pix@fora');
+    passar('/pix: funciona fora do canal da sala (usa a sala ativa do mediador)');
 
     // /filasx1mobile: deferReply imediato + 15 mensagens da fila publicadas
     const canalPainel = {

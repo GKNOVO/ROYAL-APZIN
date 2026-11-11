@@ -174,8 +174,16 @@ const comandos = [
       const canal = interaction.channel;
       if (!canal?.send) return responderErro(interaction, 'Use esse comando em um canal de texto.');
 
-      // Mensagem limpa: sem embed, sem @everyone e sem formulário.
-      const enviado = await canal.send({ content: texto, allowedMentions: { parse: [] } });
+      // Mesmo padrão visual do /anunciar, só que sem título e sem formulário.
+      const enviado = await canal.send({
+        embeds: [
+          embed('📢 Anúncio · ORG Royal AP', texto, {
+            cor: config.CORES.ouro,
+            rodape: `ORG Royal AP · por ${interaction.user.username}`,
+          }),
+        ],
+        allowedMentions: { parse: [] },
+      });
 
       await auditoria.registrar(db, client, {
         guildId: interaction.guildId,

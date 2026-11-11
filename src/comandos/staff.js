@@ -85,18 +85,36 @@ const comandos = [
         return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
       }
 
-      const partida = db
+      // Pode ser usado em QUALQUER canal: procura a sala do mediador.
+      const abertas = db
         .prepare(
           `SELECT * FROM partidas
-            WHERE guild_id = ? AND canal_id = ? AND status IN ('aguardando_pagamento', 'pago')
-            ORDER BY id DESC LIMIT 1`,
+            WHERE guild_id = ? AND status IN ('aguardando_pagamento', 'pago')
+            ORDER BY id DESC`,
         )
-        .get(String(interaction.guildId), String(interaction.channelId));
+        .all(String(interaction.guildId));
+
+      let partida = abertas.find((linha) => String(linha.canal_id) === String(interaction.channelId)) || null;
+
+      if (!partida) {
+        const minhas = abertas.filter(
+          (linha) => !linha.mediador_id || String(linha.mediador_id) === String(interaction.user.id),
+        );
+        if (minhas.length === 1) {
+          [partida] = minhas;
+        } else if (minhas.length > 1) {
+          return responderErro(
+            interaction,
+            'Você tem mais de uma sala aguardando PIX. Use `/pix` dentro do canal da sala desejada:\n' +
+              minhas.map((linha) => `• <#${linha.canal_id}>`).join('\n'),
+          );
+        }
+      }
 
       if (!partida) {
         return responderErro(
           interaction,
-          'Use este comando **dentro do canal da sala**, depois que as regras forem confirmadas.',
+          'Nenhuma sala aguardando PIX agora. Abra o `/pix` dentro da sala ou aguarde o pagamento dos jogadores.',
         );
       }
 

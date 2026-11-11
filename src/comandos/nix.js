@@ -16,10 +16,21 @@
 const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
 const nix = require('../servicos/nix');
-const { exigirStaff, exigirMediador, responderPrivado, responderErro } = require('../util/seguranca');
+const mediadores = require('../servicos/mediadores');
+const { exigirStaff, responderPrivado, responderErro } = require('../util/seguranca');
 const { embed, embedSucesso, dataBR } = require('../util/embeds');
 
 const COR = config.CORES.gelo;
+
+/**
+ * Automação de salas exige um dos CARGOS configurados no painel de mediadores
+ * (Mediador/ADM) — sem cargo, resposta efêmera de bloqueio.
+ */
+async function exigirCargoMediador(interaction, db) {
+  if (mediadores.podeUsarSalas(db, interaction.guildId, interaction.member)) return true;
+  await responderErro(interaction, mediadores.AVISO_CARGO);
+  return false;
+}
 
 function textoErro(erro) {
   if (erro instanceof nix.ErroNix) return erro.message;
@@ -106,8 +117,8 @@ async function executarJogador(interaction) {
   });
 }
 
-async function executarCriarSala(interaction) {
-  if (!(await exigirMediador(interaction, 'Só mediadores/ADM podem criar sala automática.'))) return;
+async function executarCriarSala(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const dados = await nix.criarSala({
     senha: interaction.options.getString('senha'),
@@ -138,8 +149,8 @@ async function executarCriarSala(interaction) {
   return responderPrivado(interaction, { embeds: [embedSala(dados, extra)] });
 }
 
-async function executarIniciar(interaction) {
-  if (!(await exigirMediador(interaction, 'Só mediadores/ADM podem iniciar a sala.'))) return;
+async function executarIniciar(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const sessao = interaction.options.getString('sessao');
   const dados = await nix.iniciarSala(sessao);
@@ -153,8 +164,8 @@ async function executarIniciar(interaction) {
   });
 }
 
-async function executarStatusSala(interaction) {
-  if (!(await exigirStaff(interaction, 'Só a staff pode consultar salas da Nix.'))) return;
+async function executarStatusSala(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const sessao = interaction.options.getString('sessao');
   const dados = await nix.sessao(sessao);
@@ -190,8 +201,8 @@ async function executarStatusSala(interaction) {
   });
 }
 
-async function executarChutar(interaction) {
-  if (!(await exigirMediador(interaction, 'Só mediadores/ADM podem expulsar jogadores.'))) return;
+async function executarChutar(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const dados = await nix.chutarJogador(interaction.options.getString('sessao'), interaction.options.getString('uid'));
   return responderPrivado(interaction, {
@@ -199,8 +210,8 @@ async function executarChutar(interaction) {
   });
 }
 
-async function executarLiberar(interaction) {
-  if (!(await exigirMediador(interaction, 'Só mediadores/ADM podem liberar a sala.'))) return;
+async function executarLiberar(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const dados = await nix.liberarSala(interaction.options.getString('sessao'));
   return responderPrivado(interaction, {
@@ -208,8 +219,8 @@ async function executarLiberar(interaction) {
   });
 }
 
-async function executarResultado(interaction) {
-  if (!(await exigirStaff(interaction, 'Só a staff pode consultar resultado da Nix.'))) return;
+async function executarResultado(interaction, db) {
+  if (!(await exigirCargoMediador(interaction, db))) return;
 
   const dados = await nix.resultado(interaction.options.getString('sessao'));
   const times = Array.isArray(dados.teams) ? dados.teams : [];
@@ -341,13 +352,13 @@ const comandos = [
           .addStringOption((o) => o.setName('sessao').setDescription('session_id da sala').setRequired(true)),
       ),
 
-    async executar(interaction) {
+    async executar(interaction, ctx = {}) {
       const sub = interaction.options.getSubcommand();
       const acao = ACOES[sub];
       if (!acao) return responderErro(interaction, 'Subcomando desconhecido. Use `/nix status`.');
 
       try {
-        return await acao(interaction);
+        return await acao(interaction, ctx.db);
       } catch (erro) {
         console.error(`[nix] erro em /nix ${sub}:`, erro?.message || erro);
         return responderErro(interaction, textoErro(erro));

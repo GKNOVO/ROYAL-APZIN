@@ -153,8 +153,9 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `CARGO_MEDIADOR_ID` | **importante** | Cargo marcado quando uma sala precisa de mediador | ID do cargo Mediador |
 | `CARGO_SUPORTE_ID` | recomendado | Atende os tickets (não entra nas filas de aposta) | ID do cargo Suporte |
 | `CARGO_AUX_ID` | opcional | Auxiliar do atendimento (também atende tickets) | ID do cargo Auxiliar |
-| `TELAGEM_LINK` | opcional | Link fixo do Google Meet usado em toda telagem | `https://meet.google.com/abc-defg-hij` |
-| `TELAGEM_URL_BASE` | opcional | Base usada quando não há link fixo (padrão `https://meet.google.com`) | `https://meet.google.com` |
+| `TELAGEM_LINK` | opcional | Link real do Google Meet usado em toda telagem (tem prioridade sobre o provedor) | `https://meet.google.com/abc-defg-hij` |
+| `TELAGEM_PROVEDOR` | opcional | `jitsi` (padrão, sala exclusiva criada na hora) ou `google` (link no formato do Meet) | `jitsi` |
+| `TELAGEM_URL_BASE` | opcional | Servidor do Jitsi (só vale com `TELAGEM_PROVEDOR=jitsi`) | `https://meet.jit.si` |
 | `FREE_FIRE_LINK` | opcional | Link do botão "Abrir Free Fire" na sala liberada | `https://ff.garena.com/` |
 | `CANAL_LOGS_ID` | opcional | Canal de auditoria (também dá para definir com `/logs`) | ID do canal |
 | `COMISSAO_PADRAO` | não | Comissão padrão do mediador (`0.05` = 5%) | `0.05` |
@@ -261,13 +262,18 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 
 ### 5.1 Telagem (call para a triagem)
 
-Mediador/ADM usa **`/criar_telagem`** em qualquer canal (dentro da sala da partida o painel fica
-vinculado a ela). O bot publica **✅ Sala de Telagem Criada**, com o código no formato `abc-defg-hij`
-e o botão **Entrar na Call** apontando para o **Google Meet**.
+Quem tem um dos **cargos configurados no `/mediadores`** (Mediador ou ADM) usa **`/criar_telagem`**
+em qualquer canal. O código é **exclusivo por canal/partida** (o mesmo canal sempre reaproveita a
+mesma sala; canais diferentes nunca dividem a call) e o painel **✅ Sala de Telagem Criada** mostra
+código, plataforma, URL e o botão **Entrar na Call**.
 
-O Google não oferece API para criar sala de Meet, então o bot monta a URL no formato oficial
-(`https://meet.google.com/abc-defg-hij`). Para usar um link real que já existe, defina
-`TELAGEM_LINK` no `.env` ou passe `/criar_telagem link:https://meet.google.com/...`.
+Provedores (`TELAGEM_PROVEDOR`):
+
+- `jitsi` (padrão): `https://meet.jit.si/royal-ap-<código>` — a sala é criada **na hora** em que o
+  link é aberto, então nunca aparece "reunião inexistente" e funciona no navegador do Android/iOS.
+- `google`: `https://meet.google.com/<código>` — formato oficial do Meet. O Google **não cria sala
+  por API**, então para garantir que a reunião exista use `TELAGEM_LINK` com um link real do Meet
+  ou passe `/criar_telagem link:https://meet.google.com/...`.
 
 ### 5.2 Mediação: plantão, cargos e PIX individual
 
@@ -346,9 +352,9 @@ Discord, sem abrir o Developer Portal.
 | Comando | Para que serve |
 |---|---|
 | `/registrar_pix chave: [titular:] [comissao:]` | Salva sua chave PIX de mediador |
-| `/pix` | Envia sua chave na sala do AP que você está mediando |
+| `/pix` | Envia sua chave PIX — funciona em qualquer canal do servidor |
 | `/painel_mediador` | Painel de controle da moderação |
-| `/criar_telagem [link:]` | Cria a telagem (Google Meet) no canal; `link:` usa um Meet real |
+| `/criar_telagem [link:]` | Telagem exclusiva do canal; exige cargo de mediador/ADM |
 | `/mediadores` | Módulo de configuração: cargos, canal do plantão e canal do PIX (só ADM) |
 | `/painel_mediadores tipo:fila\|registro` | Publica e fixa o painel de plantão ou o de PIX (só ADM) |
 | `/vencedor time: [partida:]` | Declara o vencedor e fecha a aposta |
@@ -357,7 +363,7 @@ Discord, sem abrir o Developer Portal.
 | `/analista` | Volume, ticket médio, modos que mais fecham |
 | `/blacklist adicionar\|listar\|remover` | Lista negra |
 | `/anunciar titulo: mensagem: [canal:]` | Anúncio formatado |
-| `/anunciar2 texto:` | Anúncio simples e direto no canal atual (sem embed) |
+| `/anunciar2 texto:` | Anúncio com o mesmo embed do `/anunciar`, só com o texto |
 | `/conectarbotcall canal:` | Coloca o bot na call de voz escolhida |
 | `/tirarbotcall` | Desconecta o bot da call |
 | `/enviar_dm usuario: mensagem:` | DM pelo bot (com registro) |

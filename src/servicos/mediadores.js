@@ -82,6 +82,20 @@ function temCargoMediador(db, guildId, member) {
   return cargos(db, guildId).some((id) => cache.has(id));
 }
 
+/** Aviso padrão quando falta o cargo configurado. */
+const AVISO_CARGO =
+  'Você precisa ter um dos cargos configurados no painel de mediadores (**Mediador** ou **ADM**) para usar este comando.';
+
+/**
+ * Pode usar os comandos de sala (telagem e automação Nix)?
+ * Exige um dos cargos configurados; a permissão de Administrador só vale como
+ * reserva enquanto nenhum cargo foi configurado no módulo.
+ */
+function podeUsarSalas(db, guildId, member) {
+  if (temCargoMediador(db, guildId, member)) return true;
+  return cargos(db, guildId).length === 0 && Boolean(member?.permissions?.has?.(PermissionFlagsBits.Administrator));
+}
+
 /** O membro pode atuar como mediador/ADM nas filas? */
 function ehMediador(db, guildId, member) {
   if (!member) return false;
@@ -161,6 +175,8 @@ module.exports = {
   limparFilaAuto,
   definirLimparFilaAuto,
   cargosSuporte,
+  AVISO_CARGO,
+  podeUsarSalas,
   temCargoMediador,
   ehMediador,
   mencoes,

@@ -1,9 +1,11 @@
 'use strict';
 
 /**
- * /criar_telagem — abre a sala de call (Google Meet) da partida.
- * Só mediador/ADM. Funciona em QUALQUER canal: dentro da sala da partida o
- * painel é vinculado a ela; fora, vale como telagem avulsa da staff.
+ * /criar_telagem — abre a sala de call exclusiva do canal/partida.
+ *
+ * • Código único por canal (a mesma partida sempre reaproveita a mesma sala).
+ * • Restrito a quem tem um dos CARGOS configurados no /mediadores (Mediador/ADM).
+ * • Funciona em qualquer canal; dentro da sala da partida o painel é vinculado a ela.
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -17,19 +19,19 @@ const comandos = [
   {
     data: new SlashCommandBuilder()
       .setName('criar_telagem')
-      .setDescription('Cria a sala de telagem (call do Google Meet) e publica o painel no canal')
+      .setDescription('Cria a sala de telagem (call exclusiva do canal) e publica o painel')
       .addStringOption((opcao) =>
         opcao
           .setName('link')
-          .setDescription('Link real do Google Meet (vazio = gera no formato oficial)'),
+          .setDescription('Link real do Google Meet (vazio = sala exclusiva gerada pelo bot)'),
       ),
 
     async executar(interaction, { db }) {
       if (!interaction.guild) {
         return responderErro(interaction, 'Use esse comando dentro do servidor da ORG.');
       }
-      if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
-        return responderErro(interaction, 'Só mediadores/ADM podem criar a telagem.');
+      if (!mediadores.podeUsarSalas(db, interaction.guildId, interaction.member)) {
+        return responderErro(interaction, mediadores.AVISO_CARGO);
       }
 
       const canal = interaction.channel;
@@ -48,17 +50,19 @@ const comandos = [
       }
 
       const partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
-      const codigo = telagem.novoCodigo();
+
+      // Código exclusivo e estável deste canal/partida (não é aleatório global).
+      const codigo = telagem.codigoDoCanal(interaction.guildId, partida?.id || interaction.channelId);
       await canal.send(telagem.painel(codigo, { url }));
 
-      const destino = url || telagem.link(codigo);
+      const destino = telagem.link(codigo, { url });
       return responderPrivado(interaction, {
         embeds: [
           embedSucesso(
             (partida
               ? `Sala de telagem criada para a partida \`${partida.id}\`.`
-              : 'Sala de telagem criada neste canal.') +
-              `\n**Código:** \`${codigo}\`\n**Link:** ${destino}`,
+              : `Sala de telagem criada para este canal.`) +
+              `\n**Código:** \`${codigo}\`\n**Link exclusivo:** ${destino}`,
           ),
         ],
       });
