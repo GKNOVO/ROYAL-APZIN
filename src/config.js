@@ -171,8 +171,13 @@ const config = {
   CARGO_AUX_ID: texto(process.env.CARGO_AUX_ID),
   CANAL_LOGS_ID: texto(process.env.CANAL_LOGS_ID),
 
-  /** Telagem: base do link da call de triagem (ex: https://meet.jit.si). */
-  TELAGEM_URL_BASE: texto(process.env.TELAGEM_URL_BASE, 'https://meet.jit.si'),
+  /**
+   * Telagem (Google Meet):
+   *  • TELAGEM_LINK            → link completo e fixo (ex: https://meet.google.com/abc-defg-hij)
+   *  • TELAGEM_URL_BASE        → base usada quando não há link fixo; gera no formato oficial
+   */
+  TELAGEM_LINK: texto(process.env.TELAGEM_LINK),
+  TELAGEM_URL_BASE: texto(process.env.TELAGEM_URL_BASE, 'https://meet.google.com'),
   /** Botão "Abrir Free Fire" que acompanha o ID/senha da sala. */
   FREE_FIRE_LINK: texto(process.env.FREE_FIRE_LINK, 'https://ff.garena.com/'),
 

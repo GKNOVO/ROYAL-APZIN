@@ -386,8 +386,15 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'plantaoentrar': {
-        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
-          await responderErro(interaction, 'Só mediadores/ADM entram na fila de plantão.');
+        // Exige um dos CARGOS configurados (Mediador/ADM). Só cai na permissão
+        // de Administrador quando nenhum cargo foi configurado ainda.
+        const cargosMed = mediadores.cargos(db, interaction.guildId);
+        const temCargo = mediadores.temCargoMediador(db, interaction.guildId, interaction.member);
+        if (!temCargo && !(cargosMed.length === 0 && ehAdmin(interaction.member))) {
+          await responderErro(
+            interaction,
+            'Você não tem nenhum dos cargos configurados para mediação (Mediador/ADM). Fale com a administração.',
+          );
           return true;
         }
         plantao.entrar(db, { guildId: interaction.guildId, userId: interaction.user.id });

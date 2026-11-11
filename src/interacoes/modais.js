@@ -189,40 +189,53 @@ async function aplicarPerfilBot(interaction, client, tipo) {
   }
 }
 
-/** Modal do PIX individual do mediador (chave, nome completo e cidade). */
+/**
+ * Modal do PIX individual do mediador (chave, nome completo e cidade).
+ *
+ * CUIDADO: o Discord limita label/título a 45 caracteres (o erro aparece como
+ * "Invalid string length"). Por isso os textos abaixo são curtos e os limites
+ * de cada campo ficam bem abaixo do máximo permitido (4000).
+ */
 async function abrirModalPix(interaction) {
-  const modal = new ModalBuilder()
-    .setCustomId('ap:modalpix')
-    .setTitle('Registrar PIX de mediador')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('chave')
-          .setLabel('Chave PIX (CPF, e-mail, telefone ou aleatória)')
-          .setStyle(TextInputStyle.Short)
-          .setMinLength(3)
-          .setMaxLength(200)
-          .setRequired(true),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('titular')
-          .setLabel('Nome completo do titular')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(120)
-          .setRequired(true),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('cidade')
-          .setLabel('Cidade de registro da conta')
-          .setStyle(TextInputStyle.Short)
-          .setMaxLength(80)
-          .setRequired(true),
-      ),
-    );
+  try {
+    const modal = new ModalBuilder()
+      .setCustomId('ap:modalpix')
+      .setTitle('Registrar PIX de mediador')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('chave')
+            .setLabel('Chave PIX (CPF, e-mail, telefone, aleat.)')
+            .setStyle(TextInputStyle.Short)
+            .setMinLength(3)
+            .setMaxLength(200)
+            .setRequired(true),
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('titular')
+            .setLabel('Nome completo do titular')
+            .setStyle(TextInputStyle.Short)
+            .setMinLength(3)
+            .setMaxLength(120)
+            .setRequired(true),
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('cidade')
+            .setLabel('Cidade de registro da conta')
+            .setStyle(TextInputStyle.Short)
+            .setMinLength(2)
+            .setMaxLength(80)
+            .setRequired(true),
+        ),
+      );
 
-  return interaction.showModal(modal);
+    return await interaction.showModal(modal);
+  } catch (erro) {
+    console.error('[modais] não consegui abrir o cadastro PIX:', erro.message);
+    return responderErro(interaction, 'Não consegui abrir o cadastro PIX agora. Tente de novo em instantes.');
+  }
 }
 
 async function aplicarPix(interaction, db) {
@@ -232,9 +245,20 @@ async function aplicarPix(interaction, db) {
   }
 
   try {
-    const chave = interaction.fields.getTextInputValue('chave');
-    const titular = interaction.fields.getTextInputValue('titular');
-    const cidade = interaction.fields.getTextInputValue('cidade');
+    // Normaliza e limita cada campo antes de gravar (nada de string gigante).
+    const limpar = (valor, max) =>
+      String(valor ?? '')
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
+    const chave = limpar(interaction.fields.getTextInputValue('chave'), 200);
+    const titular = limpar(interaction.fields.getTextInputValue('titular'), 120);
+    const cidade = limpar(interaction.fields.getTextInputValue('cidade'), 80);
+    if (chave.length < 3) throw new Error('A chave PIX precisa ter pelo menos 3 caracteres.');
+    if (titular.length < 3) throw new Error('Informe o nome completo do titular do PIX.');
+    if (cidade.length < 2) throw new Error('Informe a cidade de registro da conta.');
+
     const registro = staff.registrarPix(db, {
       guildId: interaction.guildId,
       userId: interaction.user.id,

@@ -683,6 +683,26 @@ function resposta(interaction) {
     assert.strictEqual(cfgMed.canalBatePonto(db, 'g1'), 'canal-ponto');
     passar('menus: canal do bate-ponto reconhecido (channel select tratado)');
 
+    // Canal escolhido recebe o painel automaticamente
+    const canalAuto = {
+      id: 'canal-auto-ponto',
+      enviadas: [],
+      async send(payload) {
+        canalAuto.enviadas.push(payload);
+        return { id: 'msg-auto', async pin() {} };
+      },
+    };
+    const clientAuto = { channels: { cache: new Map([[canalAuto.id, canalAuto]]), fetch: async () => null } };
+    const menuAuto = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator], guildId: 'g1' });
+    menuAuto.customId = 'ap:medpix';
+    menuAuto.values = ['canal-auto-ponto'];
+    menuAuto.isChannelSelectMenu = () => true;
+    await handleSelect(menuAuto, { db, client: clientAuto });
+    assert.strictEqual(canalAuto.enviadas.length, 1, 'painel publicado automaticamente no canal');
+    assert.ok(canalAuto.enviadas[0].embeds[0].toJSON().title.includes('Central de Pagamentos'));
+    assert.strictEqual(cfgMed.canalConfigPix(db, 'g1'), 'canal-auto-ponto');
+    passar('menus: canal de PIX recebe o painel na hora (publicação automática)');
+
     // Painel de plantão sem o botão "Config" (só Entrar/Sair/Atualizar)
     const botoesPlantao = plantao.painel(db, 'g1').components[0].toJSON().components;
     assert.deepStrictEqual(
@@ -691,6 +711,20 @@ function resposta(interaction) {
       'painel de plantão sem Config',
     );
     passar('plantão: painel só com Entrar, Sair e Atualizar');
+
+    // Entrar no plantão exige um dos cargos configurados (Mediador/ADM)
+    const semCargoPlantao = fakeInteraction({ userId: 'semcargo', guildId: 'g1' });
+    semCargoPlantao.customId = 'ap:plantaoentrar';
+    semCargoPlantao.isButton = () => true;
+    semCargoPlantao.guild = { id: 'g1' };
+    await cliqueMed(semCargoPlantao, { db, client: null });
+    assert.strictEqual(
+      plantao.posicao(db, { guildId: 'g1', userId: 'semcargo' }),
+      null,
+      'não pode entrar sem cargo',
+    );
+    assert.ok(resposta(semCargoPlantao).embeds[0].toJSON().description.includes('cargos'));
+    passar('plantão: sem cargo configurado, o botão Entrar é bloqueado');
 
     // plantão (bate-ponto)
     assert.strictEqual(plantao.entrar(db, { guildId: 'g1', userId: 'med1' }), true);
@@ -728,15 +762,41 @@ function resposta(interaction) {
     assert.strictEqual(registroMed.pix_cidade, 'São Paulo');
     passar('PIX: modal salva chave, titular e cidade do mediador');
 
+    // Modal PIX: labels <= 45 (o limite do Discord — origem do "Invalid string length")
+    const aberturaPix = fakeInteraction({ userId: 'med1', roles: ['cargo-med'], guildId: 'g1' });
+    aberturaPix.showModal = async (modal) => {
+      aberturaPix.modal = modal;
+    };
+    await require('../src/interacoes/modais').abrirModalPix(aberturaPix);
+    const jsonPix = aberturaPix.modal.toJSON();
+    assert.ok(jsonPix.title.length <= 45, jsonPix.title);
+    for (const linha of jsonPix.components) {
+      for (const campo of linha.components) {
+        assert.ok(campo.label.length <= 45, `label grande demais: ${campo.label}`);
+        assert.ok(campo.max_length <= 4000, 'max_length inválido');
+      }
+    }
+    passar('PIX: modal abre com labels e limites válidos (sem "Invalid string length")');
+
     // telagem
     const codigo = telagem.novoCodigo();
     assert.ok(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(codigo), codigo);
-    assert.ok(telagem.link(codigo).includes('royal-ap-'));
+    assert.ok(telagem.link(codigo).startsWith('https://meet.google.com/'), telagem.link(codigo));
     const painelTelagem = telagem.painel(codigo);
     assert.ok(painelTelagem.embeds[0].toJSON().title.includes('Sala de Telagem Criada'));
     assert.ok(painelTelagem.embeds[0].toJSON().description.includes(codigo));
     assert.strictEqual(painelTelagem.components[0].toJSON().components[0].style, 5, 'botão de link');
     passar('telagem: código 3-4-3, link da call e painel "Sala de Telagem Criada"');
+
+    // Link do Google Meet (fixo no .env ou colado no comando)
+    assert.ok(telagem.link(codigo).startsWith('https://meet.google.com/'), telagem.link(codigo));
+    assert.strictEqual(telagem.linkValido('https://evil.com/sala'), null, 'só aceita meet.google.com');
+    const painelMeet = telagem.painel(codigo, { url: 'https://meet.google.com/abc-defg-hij' });
+    assert.strictEqual(
+      painelMeet.components[0].toJSON().components[0].url,
+      'https://meet.google.com/abc-defg-hij',
+    );
+    passar('telagem: link do Google Meet validado (fixo ou colado no comando)');
 
     // /criar_telagem dentro da sala da partida
     const { client: clientTelagem, guild: guildTelagem } = ambienteFalso();
@@ -848,6 +908,7 @@ function resposta(interaction) {
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
       'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
       'criar_telagem', 'verp', 'mediadores', 'painel_mediadores',
+      'anunciar2', 'conectarbotcall', 'tirarbotcall',
     ];
     for (const nome of obrigatorios) {
       assert.ok(nomes.includes(nome), `faltou o comando /${nome}`);
@@ -856,9 +917,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 55);
-    assert.strictEqual(new Set(nomes).size, 55, 'nome de comando repetido');
-    passar('comandos: 55 registrados (40 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 58);
+    assert.strictEqual(new Set(nomes).size, 58, 'nome de comando repetido');
+    passar('comandos: 58 registrados (43 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(
@@ -946,6 +1007,50 @@ function resposta(interaction) {
     });
     assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'categoria_filas', null), 'cat-filas-ap');
     passar('/boombot setcategoria: salva a CATEGORIA das salas de AP');
+
+    // /anunciar2: anúncio simples direto no canal atual
+    const canalAnuncio2 = {
+      id: 'canal-anuncio2',
+      name: 'avisos',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalAnuncio2.enviadas.push(payload);
+        return { id: 'msg-an2' };
+      },
+    };
+    const anuncio2 = fakeInteraction({
+      commandName: 'anunciar2',
+      options: { texto: 'Servidor em manutenção às 22h.' },
+      channel: canalAnuncio2,
+      channelId: canalAnuncio2.id,
+      perms: [PermissionsBitField.Flags.ManageGuild],
+    });
+    await comandos.executar(anuncio2, { db, client: null });
+    assert.strictEqual(canalAnuncio2.enviadas.length, 1);
+    assert.strictEqual(canalAnuncio2.enviadas[0].content, 'Servidor em manutenção às 22h.');
+    passar('/anunciar2: manda o texto limpo direto no canal atual');
+
+    // Voz: sem conexão ativa, /tirarbotcall responde sem travar
+    const tirarCall = fakeInteraction({
+      commandName: 'tirarbotcall',
+      perms: [PermissionsBitField.Flags.ManageGuild],
+    });
+    tirarCall.guild = { id: 'g1' };
+    await comandos.executar(tirarCall, { db, client: null });
+    assert.ok(resposta(tirarCall).content.includes('não está'), JSON.stringify(resposta(tirarCall)));
+    passar('/tirarbotcall: responde quando o bot não está em call');
+
+    // Voz: /conectarbotcall sem canal é bloqueado com aviso
+    const conectarSemCanal = fakeInteraction({
+      commandName: 'conectarbotcall',
+      options: { canal: null },
+      perms: [PermissionsBitField.Flags.ManageGuild],
+    });
+    conectarSemCanal.guild = { id: 'g1', voiceAdapterCreator: {} };
+    await comandos.executar(conectarSemCanal, { db, client: null });
+    assert.ok(resposta(conectarSemCanal).embeds[0].toJSON().description.includes('canal de voz'));
+    passar('/conectarbotcall: exige um canal de voz');
 
     // /botperfil: painel ADM para trocar nome, avatar, descrição e status
     const botperfil = fakeInteraction({

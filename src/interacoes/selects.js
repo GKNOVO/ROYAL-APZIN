@@ -13,6 +13,7 @@ const config = require('../config');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
 const mediadores = require('../servicos/mediadores');
+const plantao = require('../servicos/plantao');
 const { responderPrivado, responderErro, ehAdmin } = require('../util/seguranca');
 const { embed, reais, listaUsuarios } = require('../util/embeds');
 
@@ -25,6 +26,28 @@ async function confirmarClique(interaction) {
     await interaction.deferUpdate();
   } catch (erro) {
     console.error('[selects] não consegui confirmar o clique:', erro.message);
+  }
+}
+
+/**
+ * Publica (e fixa) o painel do tipo escolhido no canal que o ADM acabou de
+ * selecionar. É o "publicou na hora" do menu de canal.
+ */
+async function publicarNoCanal(ctx, interaction, canalId, tipo) {
+  const client = ctx?.client;
+  if (!client?.channels || !canalId) return false;
+  try {
+    const canal =
+      client.channels.cache?.get?.(canalId) || (await client.channels.fetch(canalId).catch(() => null));
+    if (!canal?.send) return false;
+
+    const payload = tipo === 'medpix' ? plantao.painelRegistroPix() : plantao.painel(ctx.db, interaction.guildId);
+    const mensagem = await canal.send(payload);
+    if (typeof mensagem?.pin === 'function') await mensagem.pin().catch(() => {});
+    return true;
+  } catch (erro) {
+    console.error('[selects] não consegui publicar o painel no canal escolhido:', erro.message);
+    return false;
   }
 }
 
@@ -68,8 +91,18 @@ async function handleSelect(interaction, ctx) {
       return true;
     }
 
+    // Canal escolhido → publica (e fixa) o painel lá na mesma hora.
+    let aviso = null;
+    if (acao === 'medfila' || acao === 'medpix') {
+      const publicou = await publicarNoCanal(ctx, interaction, valores[0], acao);
+      aviso = publicou
+        ? '✅ Painel publicado e fixado no canal escolhido.'
+        : '⚠️ Canal salvo, mas não consegui publicar o painel nele. Confira as permissões do bot.';
+    }
+
     // Painel novo, já com a escolha gravada.
     await redesenhar(interaction, mediadores.painelConfig(ctx.db, interaction.guildId));
+    if (aviso) await responderPrivado(interaction, { content: aviso }).catch(() => {});
     return true;
   }
 

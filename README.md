@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 55 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 58 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -75,7 +75,7 @@ serviço não entra mais em timeout.
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 55 comandos registrados
+✅ 58 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -153,7 +153,8 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `CARGO_MEDIADOR_ID` | **importante** | Cargo marcado quando uma sala precisa de mediador | ID do cargo Mediador |
 | `CARGO_SUPORTE_ID` | recomendado | Atende os tickets (não entra nas filas de aposta) | ID do cargo Suporte |
 | `CARGO_AUX_ID` | opcional | Auxiliar do atendimento (também atende tickets) | ID do cargo Auxiliar |
-| `TELAGEM_URL_BASE` | opcional | Base do link da call de telagem (padrão `https://meet.jit.si`) | `https://meet.jit.si` |
+| `TELAGEM_LINK` | opcional | Link fixo do Google Meet usado em toda telagem | `https://meet.google.com/abc-defg-hij` |
+| `TELAGEM_URL_BASE` | opcional | Base usada quando não há link fixo (padrão `https://meet.google.com`) | `https://meet.google.com` |
 | `FREE_FIRE_LINK` | opcional | Link do botão "Abrir Free Fire" na sala liberada | `https://ff.garena.com/` |
 | `CANAL_LOGS_ID` | opcional | Canal de auditoria (também dá para definir com `/logs`) | ID do canal |
 | `COMISSAO_PADRAO` | não | Comissão padrão do mediador (`0.05` = 5%) | `0.05` |
@@ -260,10 +261,13 @@ Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamen
 
 ### 5.1 Telagem (call para a triagem)
 
-Dentro do canal da partida, mediador/ADM usa **`/criar_telagem`**. O bot publica o painel
-**✅ Sala de Telagem Criada**, com o código no formato `nrk-yqzn-amm` e o botão **Entrar na Call**
-(link gerado na hora). O endereço padrão é `https://meet.jit.si`; para usar outro servidor de call,
-defina `TELAGEM_URL_BASE` nas variáveis de ambiente.
+Mediador/ADM usa **`/criar_telagem`** em qualquer canal (dentro da sala da partida o painel fica
+vinculado a ela). O bot publica **✅ Sala de Telagem Criada**, com o código no formato `abc-defg-hij`
+e o botão **Entrar na Call** apontando para o **Google Meet**.
+
+O Google não oferece API para criar sala de Meet, então o bot monta a URL no formato oficial
+(`https://meet.google.com/abc-defg-hij`). Para usar um link real que já existe, defina
+`TELAGEM_LINK` no `.env` ou passe `/criar_telagem link:https://meet.google.com/...`.
 
 ### 5.2 Mediação: plantão, cargos e PIX individual
 
@@ -293,7 +297,7 @@ posição no ranking, total apostado e prêmios. Quem vence ganha **+1 vitória*
 
 ---
 
-## 6. Comandos (55)
+## 6. Comandos (58)
 
 **Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
@@ -344,7 +348,7 @@ Discord, sem abrir o Developer Portal.
 | `/registrar_pix chave: [titular:] [comissao:]` | Salva sua chave PIX de mediador |
 | `/pix` | Envia sua chave na sala do AP que você está mediando |
 | `/painel_mediador` | Painel de controle da moderação |
-| `/criar_telagem` | Cria a sala de telagem (call) da partida no canal da sala |
+| `/criar_telagem [link:]` | Cria a telagem (Google Meet) no canal; `link:` usa um Meet real |
 | `/mediadores` | Módulo de configuração: cargos, canal do plantão e canal do PIX (só ADM) |
 | `/painel_mediadores tipo:fila\|registro` | Publica e fixa o painel de plantão ou o de PIX (só ADM) |
 | `/vencedor time: [partida:]` | Declara o vencedor e fecha a aposta |
@@ -353,6 +357,9 @@ Discord, sem abrir o Developer Portal.
 | `/analista` | Volume, ticket médio, modos que mais fecham |
 | `/blacklist adicionar\|listar\|remover` | Lista negra |
 | `/anunciar titulo: mensagem: [canal:]` | Anúncio formatado |
+| `/anunciar2 texto:` | Anúncio simples e direto no canal atual (sem embed) |
+| `/conectarbotcall canal:` | Coloca o bot na call de voz escolhida |
+| `/tirarbotcall` | Desconecta o bot da call |
 | `/enviar_dm usuario: mensagem:` | DM pelo bot (com registro) |
 | `/limpar quantidade:` | Apaga mensagens do canal |
 | `/addvitoria` `/vitoria` `/addgiros` | Ajustes manuais de perfil |

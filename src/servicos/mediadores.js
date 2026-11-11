@@ -71,6 +71,17 @@ function cargosSuporte() {
   return [config.CARGO_SUPORTE_ID, config.CARGO_AUX_ID].filter(Boolean);
 }
 
+/**
+ * Tem algum dos CARGOS configurados para mediação?
+ * Sem bypass de permissão: serve para o botão "Entrar" do plantão, onde o
+ * requisito é ter o cargo de Mediador ou de ADM configurado no módulo.
+ */
+function temCargoMediador(db, guildId, member) {
+  const cache = member?.roles?.cache;
+  if (!cache?.has) return false;
+  return cargos(db, guildId).some((id) => cache.has(id));
+}
+
 /** O membro pode atuar como mediador/ADM nas filas? */
 function ehMediador(db, guildId, member) {
   if (!member) return false;
@@ -150,6 +161,7 @@ module.exports = {
   limparFilaAuto,
   definirLimparFilaAuto,
   cargosSuporte,
+  temCargoMediador,
   ehMediador,
   mencoes,
   painelConfig,

@@ -155,6 +155,41 @@ const comandos = [
 
   {
     data: new SlashCommandBuilder()
+      .setName('anunciar2')
+      .setDescription('Anúncio simples e direto no canal atual (só staff)')
+      .addStringOption((opcao) =>
+        opcao
+          .setName('texto')
+          .setDescription('Mensagem do anúncio')
+          .setRequired(true)
+          .setMaxLength(1800),
+      ),
+
+    async executar(interaction, { db, client }) {
+      if (!(await exigirStaff(interaction, 'Só a staff/ADM pode anunciar.'))) return;
+
+      const texto = String(interaction.options.getString('texto') || '').trim();
+      if (!texto) return responderErro(interaction, 'Escreva o texto do anúncio.');
+
+      const canal = interaction.channel;
+      if (!canal?.send) return responderErro(interaction, 'Use esse comando em um canal de texto.');
+
+      // Mensagem limpa: sem embed, sem @everyone e sem formulário.
+      const enviado = await canal.send({ content: texto, allowedMentions: { parse: [] } });
+
+      await auditoria.registrar(db, client, {
+        guildId: interaction.guildId,
+        autorId: interaction.user.id,
+        acao: 'Anúncio simples publicado',
+        detalhe: `#${canal.name || canal.id} · ${enviado.id}`,
+      });
+
+      return responderPrivado(interaction, { content: `✅ Anúncio publicado em ${canal}.` });
+    },
+  },
+
+  {
+    data: new SlashCommandBuilder()
       .setName('enviar_dm')
       .setDescription('Envia uma mensagem privada pelo bot')
       .addUserOption((opcao) => opcao.setName('usuario').setDescription('Quem recebe').setRequired(true))
