@@ -1689,12 +1689,22 @@ function resposta(interaction) {
     partidas.confirmar(db5, pGo2.id, 'gd');
     partidas.assumir(db5, pGo2.id, 'med1', 0.05);
     partidas.marcarPago(db5, pGo2.id);
-    partidas.liberarSala(db5, pGo2.id, { salaId: '11223344', senha: 'abc' });
+    partidas.liberarSala(db5, pGo2.id, { salaId: '11223344', senha: 'abc', sessao: 'sess-go-1' });
 
     const iGo1 = fakeInteraction({ commandName: 'go', userId: 'gc', channelId: 'canal-go2', channel: canalGo });
     await comandos.executar(iGo1, { db: db5, client: clienteGo });
     assert.ok(canalGo.enviadas.some((payload) => String(payload.content).includes('deu GO')));
     assert.strictEqual(partidas.buscar(db5, pGo2.id).status, 'sala_liberada');
+
+    // O GO precisa dar start REAL na sala da Nix (sem esperar os 10 min).
+    const fetchAntesGo = global.fetch;
+    const chaveAntesGo = process.env.NIX_API_KEY;
+    const pedidosGo = [];
+    process.env.NIX_API_KEY = 'nix_sk_go';
+    global.fetch = async (url, opcoes) => {
+      pedidosGo.push({ url, metodo: opcoes?.method });
+      return { ok: true, status: 200, text: async () => '{}' };
+    };
 
     const iGo2 = fakeInteraction({ commandName: 'go', userId: 'gd', channelId: 'canal-go2', channel: canalGo });
     await comandos.executar(iGo2, { db: db5, client: clienteGo });
@@ -1704,9 +1714,188 @@ function resposta(interaction) {
         String(payload.content).includes('Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.'),
       ),
     );
-    passar('/go: comando anuncia o GO e avisa os 3 segundos no canal da partida');
+    assert.ok(
+      pedidosGo.some((pedido) => pedido.metodo === 'POST' && pedido.url.endsWith('/rooms/sess-go-1/start')),
+      'a sala foi iniciada na Nix no segundo GO',
+    );
+    global.fetch = fetchAntesGo;
+    process.env.NIX_API_KEY = chaveAntesGo ?? '';
+    passar('/go: comando anuncia o GO, avisa os 3 segundos e inicia a sala na Nix');
+
+    // /go digitado no canal da fila: anuncia só na sala privada da partida.
+    const canalGo3 = {
+      id: 'canal-go3',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalGo3.enviadas.push(payload);
+        return { id: `g3-${canalGo3.enviadas.length}`, async edit() { return null; } };
+      },
+    };
+    const canalFilaGo = {
+      id: 'canal-fila-go',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalFilaGo.enviadas.push(payload);
+        return { id: `fila-${canalFilaGo.enviadas.length}` };
+      },
+    };
+    const clienteGo3 = {
+      channels: {
+        cache: new Collection([['canal-go3', canalGo3], ['canal-fila-go', canalFilaGo]]),
+        async fetch(id) {
+          return id === 'canal-go3' ? canalGo3 : id === 'canal-fila-go' ? canalFilaGo : null;
+        },
+      },
+    };
+    const pGo3 = criarGo('canal-go3', 'ge', 'gf');
+    partidas.confirmar(db5, pGo3.id, 'ge');
+    partidas.confirmar(db5, pGo3.id, 'gf');
+    partidas.assumir(db5, pGo3.id, 'med1', 0.05);
+    partidas.marcarPago(db5, pGo3.id);
+    partidas.liberarSala(db5, pGo3.id, { salaId: '55667788', senha: 'abc' });
+
+    const iFila = fakeInteraction({
+      commandName: 'go',
+      userId: 'ge',
+      channelId: 'canal-fila-go',
+      channel: canalFilaGo,
+    });
+    await comandos.executar(iFila, { db: db5, client: clienteGo3 });
+    assert.strictEqual(partidas.buscar(db5, pGo3.id).status, 'sala_liberada');
+    assert.ok(canalGo3.enviadas.some((payload) => String(payload.content).includes('deu GO')));
+    assert.strictEqual(
+      canalFilaGo.enviadas.filter((payload) => String(payload.content).includes('deu GO')).length,
+      0,
+      'o canal público da fila não recebe o anúncio',
+    );
+    passar('/go: funciona digitado no canal da fila e anuncia só na sala privada da partida');
 
     db5.close();
+  }
+
+  // ---------- painel se recupera sozinho ----------
+  {
+    const db6 = abrirBanco(path.join(pasta, 'painel.db'));
+    const { client } = ambienteFalso();
+    const guildPainel = {
+      id: 'g1',
+      roles: { everyone: { id: 'todos' } },
+      channels: client.channels,
+    };
+    guildPainel.channels = {
+      cache: new Collection(),
+      async fetch() { return null; },
+      async create(dados) {
+        const mensagens = new Collection();
+        const canal = {
+          id: `canal-painel-${guildPainel.channels.cache.size + 1}`,
+          name: dados.name,
+          type: ChannelType.GuildText,
+          isTextBased: () => true,
+          enviadas: [],
+          async send(payload) {
+            const mensagem = {
+              id: `pmsg-${guildPainel.channels.cache.size + 1}-${mensagens.size + 1}`,
+              payload,
+              author: { id: 'bot' },
+              async edit(novo) { mensagem.payload = novo; return mensagem; },
+              async delete() { mensagens.delete(mensagem.id); return true; },
+            };
+            mensagens.set(mensagem.id, mensagem);
+            canal.enviadas.push(mensagem);
+            return mensagem;
+          },
+          messages: {
+            cache: mensagens,
+            async fetch(id) { return mensagens.get(id) ?? null; },
+          },
+        };
+        guildPainel.channels.cache.set(canal.id, canal);
+        client.channels.cache.set(canal.id, canal);
+        return canal;
+      },
+    };
+
+    const canalPainel = await guildPainel.channels.create({ name: '2x2-mobile' });
+    const modo = config.modoPorId('x2mobile');
+    await paineis.publicarFila(db6, canalPainel, { guildId: 'g1', modo, entradas: [] });
+    assert.strictEqual(paineis.mensagensSalvas(db6, { guildId: 'g1', modo: modo.id }).length, 15);
+
+    // Simula deploy/troca de token: as mensagens gravadas não existem mais.
+    db6.prepare("UPDATE mensagens_painel SET mensagem_id = 'apagada' WHERE guild_id = 'g1' AND modo = ?").run(modo.id);
+    const recuperou = await paineis.atualizar(client, db6, { guildId: 'g1', modo: modo.id, preco: 200 });
+    assert.strictEqual(recuperou, true, 'painel republicado sozinho');
+    const novas = paineis.mensagensSalvas(db6, { guildId: 'g1', modo: modo.id });
+    assert.strictEqual(novas.length, 15);
+    assert.ok(novas.every((linha) => linha.mensagem_id !== 'apagada'));
+
+    // Depois de recuperado, entrar na fila volta a escrever o nome na faixa.
+    await fluxo.entrarNaFila(client, db6, {
+      guild: guildPainel,
+      userId: 'z1',
+      modo: modo.id,
+      preco: 200,
+      gelo: 'normal',
+    });
+    const alvo = paineis.mensagensSalvas(db6, { guildId: 'g1', modo: modo.id }).find((linha) => linha.preco === 200);
+    const mensagem = await canalPainel.messages.fetch(alvo.mensagem_id);
+    assert.ok(mensagem.payload.embeds[0].toJSON().fields[0].value.includes('<@z1>'));
+    passar('painel: IDs antigos/apagados são detectados, painel é republicado e a fila volta a atualizar');
+    db6.close();
+  }
+
+  // ---------- botões do painel de mediadores ----------
+  {
+    const db7 = abrirBanco(path.join(pasta, 'mediadores.db'));
+    const { handleBotao: cliqueMed } = require('../src/interacoes/botoes');
+    const servicoMediadores = require('../src/servicos/mediadores');
+    const servicoPlantao = require('../src/servicos/plantao');
+    const ADMIN = PermissionsBitField.Flags.Administrator;
+    const clique = (customId, extra = {}) => {
+      const interacao = fakeInteraction({ commandName: undefined, perms: [ADMIN], ...extra });
+      interacao.customId = customId;
+      interacao.isButton = () => true;
+      return interacao;
+    };
+
+    servicoPlantao.entrar(db7, { guildId: 'g1', userId: 'm1' });
+    const antesModo = servicoMediadores.modo(db7, 'g1');
+    const btnModo = clique('ap:medmodo');
+    await cliqueMed(btnModo, { db: db7, client: null });
+    assert.notStrictEqual(servicoMediadores.modo(db7, 'g1'), antesModo);
+    assert.ok(btnModo.chamadas.editReply.embeds[0].toJSON().title.includes('Módulo de Mediadores'));
+
+    const btnLimpar = clique('ap:medlimpar');
+    await cliqueMed(btnLimpar, { db: db7, client: null });
+    assert.strictEqual(servicoPlantao.total(db7, 'g1'), 0);
+
+    const btnPix = clique('ap:medgestaopix');
+    await cliqueMed(btnPix, { db: db7, client: null });
+    assert.ok(resposta(btnPix).embeds[0].toJSON().title.includes('Gestão PIX'));
+
+    const canalMed = {
+      id: 'canal-med',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalMed.enviadas.push(payload);
+        return { id: 'msg-med' };
+      },
+    };
+    const btnReenviar = clique('ap:medreenviar', { channel: canalMed, channelId: 'canal-med' });
+    await cliqueMed(btnReenviar, { db: db7, client: null });
+    assert.strictEqual(canalMed.enviadas.length, 1);
+
+    // Quem não é ADM não mexe em nada.
+    servicoPlantao.entrar(db7, { guildId: 'g1', userId: 'm2' });
+    const semAdm = clique('ap:medlimpar', { userId: 'm2', perms: [] });
+    await cliqueMed(semAdm, { db: db7, client: null });
+    assert.strictEqual(servicoPlantao.total(db7, 'g1'), 1);
+
+    passar('mediadores: Limpar, Modo, Gestão PIX e Reenviar respondem (e só ADM mexe)');
+    db7.close();
   }
 
   // ---------- limpeza ----------

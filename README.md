@@ -273,7 +273,16 @@ e **cada um digita `/go` no canal privado da partida**:
 - o primeiro `/go` só registra e avisa no canal (*“O jogador @X deu GO na sala!”*);
 - o segundo `/go` dispara *“Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.”*
   e a partida vai para **em andamento**;
-- `/go` repetido não conta duas vezes, e o comando só funciona no canal daquela partida.
+- `/go` repetido não conta duas vezes;
+- o comando aceita ser digitado **no canal da fila**: o bot encontra a partida ativa do jogador e
+  anuncia **só no canal privado** daquela partida;
+- se a sala foi criada pelo bot (botão **Criar sala (Nix)**), o segundo `/go` chama a API da Nix e
+  **inicia a sala na hora**, sem esperar os 10 minutos do `start_delay`.
+
+Se o nome do jogador não aparecer no painel depois de entrar, o painel é **republicado sozinho**
+quando as mensagens antigas foram apagadas ou pertencem a outra instância do bot. Se persistir, dê
+ao bot **Ver canal**, **Enviar mensagens** e **Gerenciar mensagens** no canal da fila e rode o
+comando de painel uma vez.
 
 ### 5.1 Telagem (call para a triagem)
 

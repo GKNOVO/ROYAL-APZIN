@@ -239,18 +239,56 @@ function todos(db, guildId) {
   return db.prepare('SELECT * FROM paineis WHERE guild_id = ?').all(String(guildId));
 }
 
-/** Envia as 15 mensagens da fila no canal e guarda os IDs no banco. */
+/**
+ * Apaga mensagens do painel anterior que ainda existem no canal.
+ * Só apaga o que o próprio bot enviou — mensagem de outro bot fica intocada.
+ */
+async function apagarMensagens(canal, antigas = [], manter = new Set()) {
+  if (!canal?.messages?.fetch) return 0;
+  let apagadas = 0;
+  for (const linha of antigas) {
+    if (String(linha.canal_id) !== String(canal.id)) continue;
+    if (manter.has(String(linha.mensagem_id))) continue;
+    try {
+      const mensagem = await canal.messages.fetch(linha.mensagem_id).catch(() => null);
+      if (!mensagem?.delete) continue;
+      const autor = mensagem.author?.id;
+      const eu = canal.client?.user?.id;
+      if (autor && eu && autor !== eu) continue; // painel de outro bot: não mexe
+      await mensagem.delete();
+      apagadas += 1;
+    } catch {
+      /* mensagem já apagada ou sem permissão: segue o jogo */
+    }
+  }
+  return apagadas;
+}
+
+/**
+ * Envia as 15 mensagens da fila no canal e guarda os IDs no banco.
+ * Antes de salvar, guarda o conjunto antigo e apaga essas mensagens depois —
+ * assim publicar o painel de novo não deixa 15 mensagens velhas no canal.
+ */
 async function publicarFila(db, canal, { guildId, modo, entradas = [] }) {
+  const antigas = mensagensSalvas(db, { guildId, modo: modo.id });
   const enviadas = [];
   for (const { preco, payload } of mensagensFila(modo, entradas)) {
     const mensagem = await canal.send(payload);
     enviadas.push({ preco, mensagemId: mensagem.id });
   }
   salvarFila(db, { guildId, modo: modo.id, canalId: canal.id, mensagens: enviadas });
+  await apagarMensagens(canal, antigas, new Set(enviadas.map((linha) => String(linha.mensagemId))));
   return enviadas;
 }
 
-/** Redesenha as mensagens da fila (todas ou só a faixa informada). */
+/**
+ * Redesenha as mensagens da fila (todas ou só a faixa informada).
+ *
+ * Se NENHUMA mensagem puder ser editada (ID antigo, mensagem apagada ou painel
+ * publicado por outro bot/token), o painel é republicado na hora e os novos
+ * IDs são gravados — é isso que faz a fila voltar a mostrar os jogadores sem
+ * precisar rodar o comando de painel de novo.
+ */
 async function atualizar(client, db, { guildId, modo, preco = null }) {
   const modoInfo = config.modoPorId(modo);
   if (!modoInfo) return false;
@@ -259,26 +297,65 @@ async function atualizar(client, db, { guildId, modo, preco = null }) {
   const linhas = mensagensSalvas(db, { guildId, modo: modoInfo.id });
 
   if (linhas.length) {
-    const alvo =
+    const filtradas =
       preco === null || preco === undefined
         ? linhas
         : linhas.filter((linha) => Number(linha.preco) === Number(preco));
+    // Faixa nova sem linha salva: atualiza o painel inteiro em vez de não fazer nada.
+    const alvo = filtradas.length ? filtradas : linhas;
     let editadas = 0;
+    const problemas = [];
 
     for (const linha of alvo) {
       try {
         const canal =
           client.channels.cache.get(linha.canal_id) || (await client.channels.fetch(linha.canal_id));
-        if (!canal) continue;
+        if (!canal) {
+          problemas.push(`canal ${linha.canal_id} não encontrado`);
+          continue;
+        }
         const mensagem = await canal.messages.fetch(linha.mensagem_id).catch(() => null);
-        if (!mensagem) continue;
+        if (!mensagem) {
+          problemas.push(`mensagem ${linha.mensagem_id} apagada`);
+          continue;
+        }
+        if (client.user?.id && mensagem.author?.id && mensagem.author.id !== client.user.id) {
+          problemas.push(`mensagem ${linha.mensagem_id} é de outro bot`);
+          continue;
+        }
         await mensagem.edit(mensagemPreco(modoInfo, Number(linha.preco), entradas));
         editadas += 1;
       } catch (erro) {
+        problemas.push(erro.message);
         console.error(`[paineis] não consegui atualizar ${reais(Number(linha.preco))}:`, erro.message);
       }
     }
-    return editadas > 0;
+    if (editadas > 0) return true;
+
+    const canalId = alvo[0]?.canal_id ?? linhas[0].canal_id;
+    let canal = null;
+    try {
+      canal = client.channels.cache.get(canalId) || (await client.channels.fetch(canalId));
+    } catch (erro) {
+      problemas.push(erro.message);
+    }
+    if (!canal?.send) {
+      console.error(
+        `[paineis] painel ${modoInfo.id} sem edição e sem canal para republicar (${problemas.slice(0, 2).join(' | ')})`,
+      );
+      return false;
+    }
+
+    console.warn(
+      `[paineis] painel ${modoInfo.id} será republicado (${problemas.slice(0, 2).join(' | ') || 'nada editado'})`,
+    );
+    try {
+      const enviadas = await publicarFila(db, canal, { guildId, modo: modoInfo, entradas });
+      return enviadas.length > 0;
+    } catch (erro) {
+      console.error(`[paineis] não consegui republicar o painel ${modoInfo.id}:`, erro.message);
+      return false;
+    }
   }
 
   // Compatibilidade: painel antigo, com todos os cards em uma mensagem só.
@@ -289,9 +366,13 @@ async function atualizar(client, db, { guildId, modo, preco = null }) {
       client.channels.cache.get(painel.canal_id) || (await client.channels.fetch(painel.canal_id));
     if (!canal) return false;
     const mensagem = await canal.messages.fetch(painel.mensagem_id).catch(() => null);
-    if (!mensagem) return false;
-    await mensagem.edit(mensagemPainel(modoInfo, entradas));
-    return true;
+    if (mensagem) {
+      await mensagem.edit(mensagemPainel(modoInfo, entradas));
+      return true;
+    }
+    // Painel antigo apagado: publica o formato novo de 15 mensagens.
+    const enviadas = await publicarFila(db, canal, { guildId, modo: modoInfo, entradas });
+    return enviadas.length > 0;
   } catch (erro) {
     console.error(`[paineis] não consegui atualizar o painel ${modoInfo.id}:`, erro.message);
     return false;
@@ -343,6 +424,7 @@ module.exports = {
   salvarFila,
   mensagensSalvas,
   publicarFila,
+  apagarMensagens,
   obter,
   todos,
   atualizar,

@@ -86,6 +86,19 @@ function porCanal(db, guildId, canalId) {
   );
 }
 
+/** Partidas ativas em que o jogador está escalado (para o /go fora da sala). */
+function ativasDoJogador(db, guildId, userId) {
+  return db
+    .prepare(
+      `SELECT p.* FROM partidas p
+        JOIN partida_jogadores j ON j.partida_id = p.id
+       WHERE p.guild_id = ? AND j.user_id = ?
+         AND p.status IN ('sala_liberada', 'em_andamento')
+       ORDER BY p.criado_em DESC`,
+    )
+    .all(String(guildId), String(userId));
+}
+
 function ativas(db, guildId) {
   return db
     .prepare(
@@ -162,7 +175,7 @@ function marcarPago(db, id) {
   return buscar(db, id);
 }
 
-function liberarSala(db, id, { salaId, senha }) {
+function liberarSala(db, id, { salaId, senha, sessao = null }) {
   const partida = buscar(db, id);
   if (!partida) throw new Error('Partida não encontrada.');
   if (![STATUS.PAGO, STATUS.SALA_LIBERADA].includes(partida.status)) {
@@ -170,8 +183,16 @@ function liberarSala(db, id, { salaId, senha }) {
   }
   const identificador = String(salaId || '').trim().slice(0, 40);
   if (identificador.length < 1) throw new Error('Informe o ID da sala.');
-  db.prepare('UPDATE partidas SET sala_id = ?, sala_senha = ?, status = ?, liberada_em = ? WHERE id = ?')
-    .run(identificador, senha ? String(senha).trim().slice(0, 40) : null, STATUS.SALA_LIBERADA, agora(), String(id));
+  db.prepare(
+    'UPDATE partidas SET sala_id = ?, sala_senha = ?, nix_sessao = ?, status = ?, liberada_em = ? WHERE id = ?',
+  ).run(
+    identificador,
+    senha ? String(senha).trim().slice(0, 40) : null,
+    sessao ? String(sessao).trim().slice(0, 64) : partida.nix_sessao ?? null,
+    STATUS.SALA_LIBERADA,
+    agora(),
+    String(id),
+  );
   return buscar(db, id);
 }
 
@@ -313,6 +334,7 @@ module.exports = {
   definirMensagem,
   porCanal,
   ativas,
+  ativasDoJogador,
   definirRegras,
   confirmar,
   assumir,

@@ -420,6 +420,77 @@ async function handleBotao(interaction, ctx) {
         return true;
       }
 
+      case 'medlimpar': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADM configura o módulo de mediadores.');
+          return true;
+        }
+        const removidos = plantao.limpar(db, interaction.guildId);
+        await interaction.editReply(mediadores.painelConfig(db, interaction.guildId));
+        await responderPrivado(interaction, {
+          embeds: [embedSucesso(`Fila de mediadores limpa (${removidos} mediador(es) removido(s)).`)],
+        });
+        return true;
+      }
+
+      case 'medmodo': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADM configura o módulo de mediadores.');
+          return true;
+        }
+        const atual = mediadores.modo(db, interaction.guildId);
+        const novo = atual === 'rodizio' ? 'fila' : 'rodizio';
+        mediadores.definirModo(db, interaction.guildId, novo);
+        await interaction.editReply(mediadores.painelConfig(db, interaction.guildId));
+        await responderPrivado(interaction, {
+          embeds: [embedSucesso(`Modo de mediação agora é **${mediadores.MODOS[novo]}**.`)],
+        });
+        return true;
+      }
+
+      case 'medgestaopix': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADM vê a gestão de PIX dos mediadores.');
+          return true;
+        }
+        const mediadoresCadastrados = staff.listar(db, interaction.guildId);
+        const corpo = mediadoresCadastrados.length
+          ? mediadoresCadastrados
+              .map(
+                (linha) =>
+                  `${mencao(linha.user_id)} — ${linha.pix_chave ? 'PIX cadastrado' : '**sem PIX**'} · ` +
+                  `${(linha.comissao * 100).toFixed(1)}%${linha.ativo ? '' : ' · inativo'}`,
+              )
+              .join('\n')
+          : 'Nenhum mediador cadastrado ainda. Use `/registrar_pix`.';
+        await responderPrivado(interaction, {
+          embeds: [
+            embed('💠 Gestão PIX · mediadores', corpo, {
+              cor: config.CORES.principal,
+              rodape: 'Chaves completas não aparecem aqui · ORG Royal AP',
+            }),
+          ],
+        });
+        return true;
+      }
+
+      case 'medreenviar': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADM pode reenviar o painel de mediadores.');
+          return true;
+        }
+        const canalPainel = interaction.channel;
+        if (!canalPainel?.send) {
+          await responderErro(interaction, 'Use esse botão em um canal de texto.');
+          return true;
+        }
+        await canalPainel.send(mediadores.painelConfig(db, interaction.guildId));
+        await responderPrivado(interaction, {
+          embeds: [embedSucesso('Painel de mediadores reenviado neste canal.')],
+        });
+        return true;
+      }
+
       case 'pixregistrar': {
         if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
           await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');

@@ -408,7 +408,17 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
     throw new Error(`Você já está nessa fila (posição ${resultado.posicao}).`);
   }
 
-  await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id, preco: valor });
+  const painelOk = await paineis.atualizar(client, db, {
+    guildId: guild.id,
+    modo: modoInfo.id,
+    preco: valor,
+  });
+  if (!painelOk) {
+    console.error(
+      `[fluxo] o jogador entrou na fila, mas o painel ${modoInfo.id} (${reais(valor)}) não atualizou. ` +
+        'Confira se o bot pode Ver o canal, Enviar e Editar mensagens.',
+    );
+  }
 
   const naFila = filas.contar(db, { guildId: guild.id, modo: modoInfo.id, preco: valor, gelo });
   if (naFila < modoInfo.jogadores) {

@@ -30,20 +30,23 @@ function abrirBanco(caminho) {
  * Migrações leves: acrescenta colunas novas em bancos que já existiam
  * (CREATE TABLE IF NOT EXISTS não altera tabela antiga).
  */
-function migrar(db) {
-  let colunas = [];
+function adicionarColuna(db, tabela, coluna, tipo) {
   try {
-    colunas = db.prepare('PRAGMA table_info(staff)').all().map((coluna) => coluna.name);
-  } catch {
-    return; // banco novo: o ESQUEMA já criou tudo
-  }
-  if (!colunas.includes('pix_cidade')) {
-    try {
-      db.exec('ALTER TABLE staff ADD COLUMN pix_cidade TEXT');
-    } catch (erro) {
-      console.warn('[db] não consegui adicionar staff.pix_cidade:', erro.message);
+    const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all().map((linha) => linha.name);
+    if (colunas.includes(coluna)) return;
+    db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${tipo}`);
+  } catch (erro) {
+    // Banco novo já nasce com a coluna; se a tabela não existir, o ESQUEMA cria.
+    if (!/duplicate column/i.test(erro.message)) {
+      console.warn(`[db] não consegui adicionar ${tabela}.${coluna}:`, erro.message);
     }
   }
+}
+
+function migrar(db) {
+  adicionarColuna(db, 'staff', 'pix_cidade', 'TEXT');
+  // Guarda o session_id da Nix para o /go iniciar a sala de verdade.
+  adicionarColuna(db, 'partidas', 'nix_sessao', 'TEXT');
 }
 
 /** Lê/escreve configuração simples por servidor. */

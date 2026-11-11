@@ -91,7 +91,9 @@ const ESQUEMA = [
     criado_em INTEGER NOT NULL,
     pago_em INTEGER,
     liberada_em INTEGER,
-    finalizada_em INTEGER
+    finalizada_em INTEGER,
+    -- session_id da Nix (usado pelo /go para dar start na sala do jogo)
+    nix_sessao TEXT
   )`,
 
   // Jogadores de cada partida (time 1 ou 2)

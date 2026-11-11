@@ -10,6 +10,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
 const partidas = require('../servicos/partidas');
 const fluxo = require('../servicos/fluxo');
+const nix = require('../servicos/nix');
 const auditoria = require('../servicos/auditoria');
 const { responder, responderErro } = require('../util/seguranca');
 const { embed, embedSucesso, mencao } = require('../util/embeds');
@@ -36,15 +37,25 @@ const comandos = [
         return responderErro(interaction, 'Use o /go dentro do servidor da ORG.');
       }
 
-      const partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
-      if (!partida) {
-        return responderErro(
-          interaction,
-          'Use `/go` **no canal privado da sua partida** (o canal criado quando a fila fechou).',
-        );
-      }
-      if (String(partida.canal_id) !== String(interaction.channelId)) {
-        return responderErro(interaction, 'Esse não é o canal desta partida.');
+      // 1) canal privado da partida; 2) senão, procura a partida ativa do
+      // próprio jogador — assim o /go também funciona no canal da fila.
+      let partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
+      if (!partida || String(partida.canal_id) !== String(interaction.channelId)) {
+        const minhas = partidas.ativasDoJogador(db, interaction.guildId, interaction.user.id);
+        if (minhas.length === 1) {
+          [partida] = minhas;
+        } else if (minhas.length > 1) {
+          return responderErro(
+            interaction,
+            'Você está em mais de uma partida ativa. Use `/go` no canal da partida desejada:\n' +
+              minhas.map((linha) => `• <#${linha.canal_id}>`).join('\n'),
+          );
+        } else {
+          return responderErro(
+            interaction,
+            'Você não tem partida ativa esperando GO. Entre na fila e aguarde a sala ser liberada pelo mediador.',
+          );
+        }
       }
 
       let resultado;
@@ -54,10 +65,13 @@ const comandos = [
         return responderErro(interaction, erro.message);
       }
 
+      // O anúncio vai SEMPRE para o canal privado da partida — mesmo que o
+      // jogador tenha digitado /go no canal público da fila.
       const canal =
-        interaction.channel ||
-        client?.channels?.cache?.get?.(partida.canal_id) ||
-        (await client?.channels?.fetch?.(partida.canal_id).catch?.(() => null));
+        String(partida.canal_id) === String(interaction.channelId)
+          ? interaction.channel
+          : client?.channels?.cache?.get?.(partida.canal_id) ||
+            (await client?.channels?.fetch?.(partida.canal_id).catch?.(() => null));
 
       await anunciar(
         canal,
@@ -68,6 +82,18 @@ const comandos = [
       if (resultado.iniciou) {
         await anunciar(canal, 'Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.');
         const contagem = await anunciar(canal, '⏳ **3...**');
+
+        // Inicia a sala do Free Fire NA HORA (sem esperar o delay de 10 min).
+        // Best-effort: se a Nix não responder, o anúncio e a partida continuam.
+        const sessao = resultado.partida?.nix_sessao || partida.nix_sessao;
+        if (sessao && nix.configurado()) {
+          try {
+            await nix.iniciarSala(sessao);
+            console.log(`[go] sala ${partida.id} iniciada na Nix (sessão ${sessao}).`);
+          } catch (erro) {
+            console.error(`[go] a Nix não iniciou a sala ${partida.id}:`, erro.message);
+          }
+        }
 
         const relogio = setTimeout(async () => {
           try {

@@ -112,7 +112,11 @@ async function criarSalaDaPartida(client, db, { partidaId }) {
     nome: `Royal AP ${reais(partida.preco)}`,
   });
 
-  partidas.liberarSala(db, partidaId, { salaId: dados.room_id, senha: dados.password });
+  partidas.liberarSala(db, partidaId, {
+    salaId: dados.room_id,
+    senha: dados.password,
+    sessao: dados.session_id ?? null,
+  });
   const canalId = await publicarSalaLiberada(client, db, partidaId, dados).catch((erro) => {
     console.error('[salas] não consegui avisar no canal da fila:', erro.message);
     return null;
