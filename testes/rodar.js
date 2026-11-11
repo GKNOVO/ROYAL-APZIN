@@ -203,10 +203,10 @@ function resposta(interaction) {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((linha) => linha.name);
-    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao', 'telagem_links', 'telagens']) {
+    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'partida_go', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao', 'telagem_links', 'telagens']) {
       assert.ok(tabelas.includes(esperada), `faltou a tabela ${esperada}`);
     }
-    passar('banco: 16 tabelas criadas automaticamente');
+    passar('banco: 17 tabelas criadas automaticamente');
   }
 
   // ---------- usuários e economia ----------
@@ -1023,7 +1023,7 @@ function resposta(interaction) {
       'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'pix', 'ranking',
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
       'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
-      'criar_telagem', 'verp', 'mediadores', 'painel_mediadores',
+      'criar_telagem', 'verp', 'mediadores', 'painel_mediadores', 'go',
       'anunciar2', 'conectarbotcall', 'tirarbotcall', 'telagem_links',
     ];
     for (const nome of obrigatorios) {
@@ -1033,9 +1033,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 59);
-    assert.strictEqual(new Set(nomes).size, 59, 'nome de comando repetido');
-    passar('comandos: 59 registrados (44 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 60);
+    assert.strictEqual(new Set(nomes).size, 60, 'nome de comando repetido');
+    passar('comandos: 60 registrados (45 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(
@@ -1634,6 +1634,213 @@ function resposta(interaction) {
     global.fetch = fetchOriginal;
     delete process.env.NIX_API_URL;
     passar('nix: 401/402 e chave ausente viram mensagens claras em português');
+  }
+
+  // ---------- blindagem: estados, /go, concorrência, cache e auditoria ----------
+  {
+    const seg = require('../src/util/seguranca');
+    const cache = require('../src/db/cache');
+    const validacao = require('../src/util/validacao');
+    const salasServico = require('../src/servicos/salas');
+    const { definirConfig, obterConfig } = require('../src/db');
+    const db4 = abrirBanco(path.join(pasta, 'blindado.db'));
+    const criarPartida = (canalId, a = 'b1', b = 'b2') =>
+      partidas.criar(db4, {
+        guildId: 'g1',
+        modo: 'x1mobile',
+        preco: 100,
+        gelo: 'normal',
+        canalId,
+        jogadores: [{ userId: a, time: 1 }, { userId: b, time: 2 }],
+      });
+
+    // validação de entrada
+    assert.throws(() => validacao.idSala('   '), /ID da sala/);
+    assert.throws(() => validacao.idSala('sala com espaço'), /letras, números/);
+    assert.throws(() => validacao.chavePix('a'), /3 caracteres/);
+    assert.strictEqual(validacao.limpar('x'.repeat(500), 10).length, 10);
+    passar('entrada: ID de sala, chave PIX e texto gigante validados antes do banco');
+
+    // máquina de estados
+    assert.strictEqual(partidas.podeTransicionar('confirmando', 'pago'), false);
+    assert.strictEqual(partidas.podeTransicionar('pago', 'sala_liberada'), true);
+
+    const pEstado = criarPartida('canal-estado', 'e1', 'e2');
+    assert.throws(() => partidas.marcarPago(db4, pEstado.id), /mediador/);
+    assert.throws(() => partidas.finalizar(db4, { partidaId: pEstado.id, vencedorTime: 1 }), /pronta|não está/i);
+    partidas.confirmar(db4, pEstado.id, 'e1');
+    partidas.confirmar(db4, pEstado.id, 'e2');
+    partidas.assumir(db4, pEstado.id, 'med1', 0.05);
+    partidas.salvarPix(db4, pEstado.id, { chave: 'med1@pix.com', titular: 'Mediador' });
+    partidas.marcarPago(db4, pEstado.id);
+    assert.strictEqual(partidas.marcarPago(db4, pEstado.id).status, 'pago', 'clique repetido não muda nada');
+    assert.strictEqual(partidas.liberarSala(db4, pEstado.id, { salaId: '12345678', senha: 'ab12' }).status, 'sala_liberada');
+    assert.strictEqual(
+      partidas.liberarSala(db4, pEstado.id, { salaId: '12345678', senha: 'ab12' }).status,
+      'sala_liberada',
+      'liberar de novo é idempotente',
+    );
+    passar('estado: transições lineares e cliques repetidos idempotentes');
+
+    // /go
+    assert.throws(() => partidas.darGo(db4, { partidaId: pEstado.id, userId: 'estranho' }), /não está nessa partida/);
+    const go1 = partidas.darGo(db4, { partidaId: pEstado.id, userId: 'e1' });
+    assert.strictEqual(go1.deram, 1);
+    assert.strictEqual(go1.iniciou, false);
+    const go2 = partidas.darGo(db4, { partidaId: pEstado.id, userId: 'e2' });
+    assert.strictEqual(go2.iniciou, true);
+    assert.strictEqual(partidas.buscar(db4, pEstado.id).status, 'em_andamento');
+    const go3 = partidas.darGo(db4, { partidaId: pEstado.id, userId: 'e2' });
+    assert.strictEqual(go3.iniciou, false, 'não conta duas vezes');
+    passar('/go: só inicia com os dois jogadores e nunca dispara duas vezes');
+
+    // botão de pagamento por outro mediador é bloqueado no backend
+    const pOutro = criarPartida('canal-outro', 'o1', 'o2');
+    partidas.confirmar(db4, pOutro.id, 'o1');
+    partidas.confirmar(db4, pOutro.id, 'o2');
+    partidas.assumir(db4, pOutro.id, 'med1', 0.05);
+    const cliqueErrado = fakeInteraction({ commandName: undefined, userId: 'med2', channelId: 'canal-outro' });
+    cliqueErrado.customId = `ap:pago:${pOutro.id}`;
+    cliqueErrado.isButton = () => true;
+    await require('../src/interacoes/botoes').handleBotao(cliqueErrado, { db: db4, client: null });
+    assert.ok(resposta(cliqueErrado).embeds[0].toJSON().title.includes('Não foi possível'));
+    assert.strictEqual(partidas.buscar(db4, pOutro.id).status, 'aguardando_pagamento');
+    passar('segurança: outro mediador não confirma pagamento (checagem no backend)');
+
+    // responsabilidade pelo mediador
+    const partidaMed = partidas.buscar(db4, pOutro.id);
+    assert.strictEqual(seg.ehMediadorDaPartida(partidaMed, { permissions: { has: () => false } }, 'med1'), true);
+    assert.strictEqual(seg.ehMediadorDaPartida(partidaMed, { permissions: { has: () => false } }, 'med2'), false);
+    assert.strictEqual(seg.ehMediadorDaPartida(partidaMed, { permissions: { has: () => true } }, 'qualquer'), true);
+    passar('segurança: só o mediador responsável (ou ADM) manda na partida');
+
+    // concorrência na criação de sala (Nix chamada uma única vez)
+    const pLock = criarPartida('canal-lock', 'l1', 'l2');
+    partidas.confirmar(db4, pLock.id, 'l1');
+    partidas.confirmar(db4, pLock.id, 'l2');
+    partidas.assumir(db4, pLock.id, 'med1', 0.05);
+    partidas.marcarPago(db4, pLock.id);
+
+    const chaveAntes = process.env.NIX_API_KEY;
+    process.env.NIX_API_KEY = 'nix_sk_teste';
+    let chamadasNix = 0;
+    const fetchAntes = global.fetch;
+    global.fetch = async () => {
+      chamadasNix += 1;
+      await new Promise((ok2) => setTimeout(ok2, 50));
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ session_id: 'sess-lock', room_id: 55555, password: '9876' }),
+      };
+    };
+    const canalLock = {
+      id: 'canal-lock',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalLock.enviadas.push(payload);
+        return { id: 'msg-lock' };
+      },
+    };
+    const clienteLock = {
+      channels: {
+        cache: new Collection([['canal-lock', canalLock]]),
+        async fetch() {
+          return canalLock;
+        },
+      },
+    };
+
+    const primeiraSala = salasServico.criarSalaDaPartida(clienteLock, db4, { partidaId: pLock.id });
+    await assert.rejects(
+      () => salasServico.criarSalaDaPartida(clienteLock, db4, { partidaId: pLock.id }),
+      /sendo criada/,
+    );
+    const criada1 = await primeiraSala;
+    assert.strictEqual(criada1.dados.room_id, 55555);
+    assert.strictEqual(chamadasNix, 1, 'a Nix foi chamada uma vez só');
+    const criada2 = await salasServico.criarSalaDaPartida(clienteLock, db4, { partidaId: pLock.id });
+    assert.strictEqual(criada2.reutilizada, true);
+    assert.strictEqual(chamadasNix, 1, 'não cria sala duplicada');
+    assert.strictEqual(partidas.buscar(db4, pLock.id).status, 'sala_liberada');
+    assert.ok(
+      canalLock.enviadas.some((payload) => String(payload.embeds?.[0]?.toJSON?.().description || '').includes('55555')),
+      'ID/senha publicados no canal privado da partida',
+    );
+    global.fetch = fetchAntes;
+    process.env.NIX_API_KEY = chaveAntes ?? '';
+    passar('concorrência: clique duplo não gera sala duplicada e a senha fica só na sala privada');
+
+    // auditoria mascarada e estruturada
+    await auditoria.registrar(db4, null, {
+      guildId: 'g1',
+      autorId: 'med1',
+      autorTag: 'med1#0001',
+      canalId: 'canal-outro',
+      acao: 'PIX enviado',
+      detalhe: 'chave 123.456.789-01 e joao@exemplo.com',
+      motivo: 'teste de máscara',
+    });
+    const registroAuditoria = auditoria.recentes(db4, 'g1', 1)[0];
+    assert.ok(!registroAuditoria.detalhe.includes('123.456.789-01'));
+    assert.ok(registroAuditoria.detalhe.includes('***.***.***-**'));
+    assert.ok(!registroAuditoria.detalhe.includes('joao@exemplo.com'));
+    assert.strictEqual(registroAuditoria.autor_tag, 'med1#0001');
+    assert.strictEqual(registroAuditoria.canal_id, 'canal-outro');
+    assert.strictEqual(registroAuditoria.motivo, 'teste de máscara');
+    passar('auditoria: PIX/e-mail mascarados + autor, canal, motivo e horário');
+
+    // cache de configuração
+    definirConfig(db4, 'g1', 'cache_teste', 'primeiro');
+    assert.strictEqual(obterConfig(db4, 'g1', 'cache_teste', 'x'), 'primeiro');
+    assert.ok(cache.estatisticas().itens >= 1, 'valor entrou no Map');
+    definirConfig(db4, 'g1', 'cache_teste', 'segundo');
+    assert.strictEqual(obterConfig(db4, 'g1', 'cache_teste', 'x'), 'segundo', 'cache invalida ao escrever');
+    passar('cache: configuração vem do Map e é invalidada em toda escrita');
+
+    // /go pelo comando, no canal privado da partida
+    const canalGo = {
+      id: 'canal-go',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalGo.enviadas.push(payload);
+        return { id: `msg-go-${canalGo.enviadas.length}`, async edit() { return null; } };
+      },
+    };
+    const clienteGo = {
+      channels: {
+        cache: new Collection([['canal-go', canalGo]]),
+        async fetch() {
+          return canalGo;
+        },
+      },
+    };
+    const pGo = criarPartida('canal-go', 'go1', 'go2');
+    partidas.confirmar(db4, pGo.id, 'go1');
+    partidas.confirmar(db4, pGo.id, 'go2');
+    partidas.assumir(db4, pGo.id, 'med1', 0.05);
+    partidas.marcarPago(db4, pGo.id);
+    partidas.liberarSala(db4, pGo.id, { salaId: '87654321', senha: 'xyz' });
+
+    const iGo1 = fakeInteraction({ commandName: 'go', userId: 'go1', channelId: 'canal-go', channel: canalGo });
+    await comandos.executar(iGo1, { db: db4, client: clienteGo });
+    assert.strictEqual(partidas.buscar(db4, pGo.id).status, 'sala_liberada');
+    assert.ok(canalGo.enviadas.some((payload) => String(payload.content).includes('deu GO')));
+
+    const iGo2 = fakeInteraction({ commandName: 'go', userId: 'go2', channelId: 'canal-go', channel: canalGo });
+    await comandos.executar(iGo2, { db: db4, client: clienteGo });
+    assert.strictEqual(partidas.buscar(db4, pGo.id).status, 'em_andamento');
+    assert.ok(
+      canalGo.enviadas.some((payload) =>
+        String(payload.content).includes('Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.'),
+      ),
+    );
+    passar('/go: comando anuncia o GO, inicia com os dois e avisa os 3 segundos');
+
+    db4.close();
   }
 
   // ---------- limpeza ----------

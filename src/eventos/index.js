@@ -12,6 +12,7 @@ const { handleSelect } = require('../interacoes/selects');
 const { handleModal } = require('../interacoes/modais');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
+const logs = require('../util/logs');
 const { embedErro } = require('../util/embeds');
 
 const EFEMERO = 64;
@@ -102,8 +103,11 @@ function montar(client, db) {
         .registrar(db, client, {
           guildId: interaction.guildId,
           autorId: interaction.user?.id,
+          autorTag: interaction.user?.tag ?? null,
+          canalId: interaction.channelId ?? null,
           acao: 'Erro em interação',
           detalhe: `${interaction.customId || interaction.commandName} · ${erro.message}`,
+          motivo: 'Falha durante a execução da interação',
         })
         .catch(() => {});
     }
@@ -140,12 +144,9 @@ function montar(client, db) {
 }
 
 function ligarProcesso(db) {
-  process.on('unhandledRejection', (motivo) => {
-    console.error('[processo] promise rejeitada sem tratamento:', motivo);
-  });
-  process.on('uncaughtException', (erro) => {
-    console.error('[processo] exceção não capturada:', erro);
-  });
+  // Promise rejeitada / exceção não capturada NUNCA derrubam o bot: vão para o
+  // arquivo de log (database/erros.log) e a hospedagem nem percebe.
+  logs.instalarTratadoresGlobais({ db });
 
   const desligar = (sinal) => {
     console.log(`\n👋 Recebi ${sinal}, fechando o banco com segurança...`);

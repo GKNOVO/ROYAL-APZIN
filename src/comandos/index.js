@@ -20,6 +20,7 @@ const modulos = [
   require('./utilidades'),
   require('./botperfil'),
   require('./mediadores'),
+  require('./go'),
   require('./telagem'),
   require('./telagem_links'),
   require('./voz'),

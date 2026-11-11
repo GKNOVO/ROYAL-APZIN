@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 59 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 60 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -75,7 +75,7 @@ serviço não entra mais em timeout.
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 59 comandos registrados
+✅ 60 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -254,12 +254,17 @@ Mencionar Everyone · Anexar Arquivos.
 6. **💸 Liberar PIX** (botão) ou **`/pix`** na sala → a chave PIX **daquele mediador** aparece na
    sala e na DM dos jogadores. Ele confere os comprovantes e clica em **✅ Pagamento recebido**.
 7. **🎮 Criar sala (Nix)** → a API cria a sala no jogo e o bot publica **ID, senha e um botão para
-   abrir o Free Fire** direto no canal da fila (onde as 15 mensagens foram publicadas).
-8. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
+   abrir o Free Fire** **só no canal privado daquela partida** (nunca na fila pública): o canal é
+   isolado, então só os jogadores daquele AP + mediador/ADM veem a senha.
+8. Os dois jogadores entram na sala do Free Fire e cada um digita **`/go`** no canal da partida. No
+   segundo GO o bot anuncia *“Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.”*
+   e coloca a partida em **em andamento**.
+9. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
    comissão do mediador e auditoria.
 
 Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamento` → `pago` →
-`sala_liberada` → `finalizada` / `cancelada`. O painel da sala se atualiza sozinho em cada etapa.
+`sala_liberada` → `em_andamento` → `finalizada` / `cancelada`. Cada transição é atômica no banco
+(um clique duplo nunca avança duas etapas) e o painel da sala se atualiza sozinho em cada etapa.
 
 ### 5.1 Telagem (call para a triagem)
 
@@ -308,9 +313,40 @@ API da Nix (`NIX_API_KEY`).
 posição no ranking, total apostado e prêmios. Quem vence ganha **+1 vitória**; quem perde ganha
 **+1 derrota** — na hora, sem ajuste manual.
 
+### 5.4 Início rápido com `/go`
+
+Depois que o mediador publica o ID e a senha, os jogadores entram na sala personalizada do Free Fire
+e **cada um digita `/go` no canal privado da partida**:
+
+- o primeiro `/go` só registra e avisa no canal (*“O jogador @X deu GO na sala!”*);
+- o segundo `/go` dispara *“Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.”*
+  e a partida vai para **em andamento**;
+- o botão de resultado (**Equipe 1/2 venceu**) só aparece depois disso — antes, o painel só deixa
+  aplicar **W.O.** ou cancelar;
+- `/go` repetido não conta duas vezes, e o comando só funciona no canal daquela partida.
+
+### 5.5 Segurança e robustez (o que sustenta tudo isso)
+
+- **Permissão no backend:** cada botão reconfere cargo e, nas ações de partida, se quem clicou é o
+  **mediador que assumiu aquela sala** (ou um ADM). Não adianta o botão estar visível.
+- **Máquina de estados atômica:** as mudanças usam `UPDATE ... WHERE status = <esperado>`, então
+  cliques simultâneos, timeouts ou reinício do bot não pulam etapa nem duplicam resultado.
+- **Sala única por partida (idempotência):** antes de chamar a API da Nix o bot pega uma trava no
+  banco. Dois cliques em “Criar sala” geram **uma** sala; se ela já existe, o bot devolve a mesma.
+- **Sem segredo no código:** token, chave Nix e chaves PIX vêm sempre do `.env` (ou das variáveis da
+  hospedagem). A auditoria e os logs **mascaram** PIX/e-mail/telefone (`***.***.***-**`).
+- **Cache em memória:** cargos, canal de logs e configuração do servidor ficam num `Map` com TTL e
+  são invalidados a cada escrita — menos leitura no SQLite em cada clique de painel.
+- **Nada derruba o bot:** `unhandledRejection` e `uncaughtException` são registrados em
+  `database/erros.log` (rotação em 5 MB) e o processo continua atendendo as outras partidas.
+- **Financeiro em transação:** resultado, comissão e estorno de cancelamento são gravados junto com
+  o status e o extrato (`transacoes`) na mesma transação do SQLite.
+- **Entradas validadas:** modais e comandos passam por `src/util/validacao.js` (tamanho, caracteres,
+  ID de sala, chave PIX) antes de tocar no banco.
+
 ---
 
-## 6. Comandos (59)
+## 6. Comandos (60)
 
 **Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
@@ -347,6 +383,7 @@ Discord, sem abrir o Developer Portal.
 | `/ranking [tipo]` | Top 10 por vitórias, moedas ou giros |
 | `/apostas [usuario]` | Histórico das últimas apostas |
 | `/convites [usuario]` | Ranking de convites |
+| `/go` | Confirma no canal da partida que você já está na sala do Free Fire |
 | `/ajuda` | Explica o fluxo e os comandos |
 | `/aux` | Reservado: só avisa para usar `/ticket` |
 | `/ticket` | Central de Atendimento só para você, que se apaga em 15 segundos |
@@ -393,10 +430,14 @@ Discord, sem abrir o Developer Portal.
 index.js                      → entrada: valida .env, abre banco, conecta
 src/config.js                 → 15 modos, 14 faixas de preço, botões por categoria
 src/servidor.js               → servidor HTTP de saúde (porta do Render)
-src/db/esquema.js             → esquema SQLite (12 tabelas)
-src/db/index.js               → conexão, criação e configurações por servidor
+src/db/esquema.js             → esquema SQLite (17 tabelas)
+src/db/index.js               → conexão, migrações e configurações por servidor (com cache)
+src/db/cache.js               → cache em memória (Map + TTL) para cargos/configuração
 src/util/embeds.js            → embeds, formatação de R$, datas
-src/util/seguranca.js         → permissões (ADM/Staff/Mediador) e respostas seguras
+src/util/seguranca.js         → permissões (ADM/Staff/Mediador responsável) e respostas seguras
+src/util/validacao.js         → limpeza e validação de tudo que vem de fora
+src/util/mascara.js           → mascaramento de PIX/e-mail/telefone em logs
+src/util/logs.js              → arquivo de erros + unhandledRejection/uncaughtException
 src/servicos/usuarios.js      → perfil, moedas, giros, estatísticas
 src/servicos/staff.js         → PIX, comissão, relatório de receita
 src/servicos/filas.js         → entrar/sair/listar/reservar grupo (transação)
@@ -426,8 +467,8 @@ npm test
 
 Os testes criam um banco temporário e um Discord falso em memória. Cobrem: esquema do banco, moedas e
 giros, fila (entrada, saída, reserva atômica), partida completa (regras → mediador → pagamento →
-sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 48 comandos, os tickets, o servidor HTTP e
-os handlers de `/registrar_pix`, `/ajuda`, `/perfil`, `/loja`, `/pix` e `/boombot`.
+sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 60 comandos, os tickets, o servidor HTTP, a máquina de estados, o `/go`,
+a trava de concorrência da Nix, o cache e o mascaramento da auditoria.
 
 ---
 
@@ -472,3 +513,18 @@ No Termux, use `termux-wake-lock` antes de `npm start` para o Android não pausa
 Apostas com dinheiro real são responsabilidade do servidor. O bot **não processa pagamento nenhum**:
 ele só mostra a chave PIX que o mediador cadastrou e registra o que a staff confirmou. Combine as
 regras, taxas e punições com a ORG e deixe tudo escrito nos canais de regras.
+
+---
+
+## 13. Checklist de segurança na hospedagem
+
+- `.env` **nunca** vai para o GitHub (o `.gitignore` já bloqueia; confira antes de subir).
+- Se um token/chave já foi commitado, **resete**: Developer Portal → Bot → Reset Token e, na Nix,
+  gere uma chave nova. Histórico de Git guarda o valor antigo.
+- Na Discloud/Render, cadastre `DISCORD_TOKEN`, `NIX_API_KEY` e IDs **nas variáveis de ambiente**.
+- Dê ao bot só as permissões que ele usa: Gerenciar Canais, Gerenciar Mensagens, Enviar Mensagens,
+  Incorporar Links, Ler Histórico e Conectar (voz).
+- O arquivo `database/erros.log` pode conter stack traces — não publique; ele já sai com PIX/e-mail
+  mascarados pela auditoria.
+- Rode `npm test` depois de qualquer alteração: são verificações offline de estado, concorrência e
+  permissão, sem precisar de token.

@@ -240,4 +240,21 @@ config.validarToken = function validarToken() {
   return null;
 };
 
+/**
+ * Checagens de segurança do ambiente (não derrubam o bot, só avisam).
+ * Serve para pegar cedo: chave de exemplo, token com espaço, chave Nix curta.
+ */
+config.alertasSeguranca = function alertasSeguranca() {
+  const alertas = [];
+  if (config.NIX_API_KEY && /^COLE_/i.test(config.NIX_API_KEY)) {
+    alertas.push('NIX_API_KEY ainda está com o texto de exemplo — as salas automáticas vão falhar.');
+  } else if (config.NIX_API_KEY && config.NIX_API_KEY.length < 16) {
+    alertas.push('NIX_API_KEY parece curta demais. Confira a chave no painel da Nix.');
+  }
+  if (config.TOKEN && /\s/.test(config.TOKEN)) {
+    alertas.push('DISCORD_TOKEN tem espaço/quebra de linha. Cole o token em uma linha só.');
+  }
+  return alertas;
+};
+
 module.exports = config;

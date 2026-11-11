@@ -5,10 +5,24 @@
 const { SlashCommandBuilder } = require('discord.js');
 const partidas = require('../servicos/partidas');
 const fluxo = require('../servicos/fluxo');
-const { exigirMediador, responderErro, responderPrivado } = require('../util/seguranca');
+const { exigirMediador, ehMediadorDaPartida, responderErro } = require('../util/seguranca');
 const { reais, mencao } = require('../util/embeds');
 
 /** Acha a partida pelo ID informado ou pela sala onde o comando foi usado. */
+/**
+ * Resultado é do mediador que assumiu a partida (ou ADM).
+ * Sem mediador ainda, vale quem tem cargo de mediador.
+ */
+async function garantirResponsavel(interaction, partida) {
+  if (ehMediadorDaPartida(partida, interaction.member, interaction.user.id)) return true;
+  if (!partida.mediador_id) return exigirMediador(interaction);
+  await responderErro(
+    interaction,
+    'Só o mediador responsável por esta sala (ou um ADM) pode declarar o resultado.',
+  );
+  return false;
+}
+
 function localizar(db, interaction) {
   const idInformado = interaction.options.getString('partida');
   if (idInformado) {
@@ -40,14 +54,15 @@ const comandos = [
       ),
 
     async executar(interaction, { db, client }) {
-      if (!(await exigirMediador(interaction))) return;
-
       const time = interaction.options.getInteger('time');
       const partida = localizar(db, interaction);
+      if (!(await garantirResponsavel(interaction, partida))) return;
       const resultado = await fluxo.encerrarPartida(client, db, {
         partidaId: partida.id,
         vencedorTime: time,
         autorId: interaction.user.id,
+        autorTag: interaction.user.tag,
+        canalId: interaction.channelId,
       });
 
       return interaction.editReply({
@@ -74,14 +89,15 @@ const comandos = [
       ),
 
     async executar(interaction, { db, client }) {
-      if (!(await exigirMediador(interaction))) return;
-
       const ausente = interaction.options.getInteger('ausente');
       const partida = localizar(db, interaction);
+      if (!(await garantirResponsavel(interaction, partida))) return;
       const resultado = await fluxo.aplicarWO(client, db, {
         partidaId: partida.id,
         timeAusente: ausente,
         autorId: interaction.user.id,
+        autorTag: interaction.user.tag,
+        canalId: interaction.channelId,
       });
 
       return interaction.editReply({

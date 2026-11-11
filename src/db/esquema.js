@@ -91,7 +91,11 @@ const ESQUEMA = [
     criado_em INTEGER NOT NULL,
     pago_em INTEGER,
     liberada_em INTEGER,
-    finalizada_em INTEGER
+    iniciada_em INTEGER,
+    finalizada_em INTEGER,
+    -- trava de concorrência da criação de sala (idempotência da Nix)
+    sala_lock_em INTEGER,
+    nix_sessao TEXT
   )`,
 
   // Jogadores de cada partida (time 1 ou 2)
@@ -100,6 +104,15 @@ const ESQUEMA = [
     user_id TEXT NOT NULL,
     time INTEGER NOT NULL,
     confirmou INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (partida_id, user_id),
+    FOREIGN KEY (partida_id) REFERENCES partidas(id) ON DELETE CASCADE
+  )`,
+
+  // /go: quem já avisou que está dentro da sala do Free Fire
+  `CREATE TABLE IF NOT EXISTS partida_go (
+    partida_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    criado_em INTEGER NOT NULL,
     PRIMARY KEY (partida_id, user_id),
     FOREIGN KEY (partida_id) REFERENCES partidas(id) ON DELETE CASCADE
   )`,
@@ -131,8 +144,11 @@ const ESQUEMA = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT,
     autor_id TEXT,
+    autor_tag TEXT,
+    canal_id TEXT,
     acao TEXT NOT NULL,
     detalhe TEXT,
+    motivo TEXT,
     criado_em INTEGER NOT NULL
   )`,
 
@@ -194,6 +210,7 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_telagens_url ON telagens (guild_id, url)`,
   `CREATE INDEX IF NOT EXISTS idx_partidas_canal ON partidas (guild_id, canal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_partidas_status ON partidas (guild_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_partida_go ON partida_go (partida_id)`,
   `CREATE INDEX IF NOT EXISTS idx_transacoes_user ON transacoes (guild_id, user_id, criado_em)`,
 ];
 
