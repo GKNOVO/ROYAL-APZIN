@@ -5,12 +5,37 @@
 const config = require('../config');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
-const { responderPrivado, responderErro } = require('../util/seguranca');
+const mediadores = require('../servicos/mediadores');
+const { responderPrivado, responderErro, ehAdmin } = require('../util/seguranca');
 const { embed, reais, listaUsuarios } = require('../util/embeds');
 
 async function handleSelect(interaction, ctx) {
   const partes = String(interaction.customId || '').split(':');
-  if (partes[0] !== 'ap' || partes[1] !== 'preco') return false;
+  if (partes[0] !== 'ap') return false;
+
+  // Menus do /mediadores: cargos, canal do plantão e canal do PIX.
+  if (['medcargos', 'medfila', 'medpix'].includes(partes[1])) {
+    try {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    } catch (erro) {
+      console.error('[selects] não consegui confirmar o clique:', erro.message);
+    }
+
+    if (!ehAdmin(interaction.member)) {
+      await responderErro(interaction, 'Só ADM configura o módulo de mediadores.');
+      return true;
+    }
+
+    const valores = (interaction.values || []).map(String).filter(Boolean);
+    if (partes[1] === 'medcargos') mediadores.definirCargos(ctx.db, interaction.guildId, valores);
+    if (partes[1] === 'medfila') mediadores.definirCanalBatePonto(ctx.db, interaction.guildId, valores[0]);
+    if (partes[1] === 'medpix') mediadores.definirCanalConfigPix(ctx.db, interaction.guildId, valores[0]);
+
+    await interaction.editReply(mediadores.painelConfig(ctx.db, interaction.guildId));
+    return true;
+  }
+
+  if (partes[1] !== 'preco') return false;
 
   // Confirma o clique na hora: o Discord exige resposta em menos de 3 segundos.
   try {

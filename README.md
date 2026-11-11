@@ -144,7 +144,7 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
 | `CANAL_FILA_ID` | recomendado | **Canal de referência das filas**: o canal de cada fila nasce logo **abaixo** dele (também dá para definir com `/boombot setfila`) | `111222333444555666` |
 | `TICKET_CANAL_ID` | recomendado | **Canal de referência dos tickets**: o ticket nasce logo **abaixo** dele, sem mensagem no chat (também dá para definir com `/boombot setticket`) | `111222333444555777` |
-| `CATEGORIA_FILAS_ID` | opcional | Categoria onde as salas privadas de AP são criadas (compatibilidade) | `111222333444555666` |
+| `CATEGORIA_FILAS_ID` | opcional | Fallback antigo de categoria para as salas de AP (o normal é nascer logo abaixo do canal de referência) | `111222333444555666` |
 | `TICKET_DESTINO_ID` | opcional | Alternativa ao `TICKET_CANAL_ID` (aceita canal de texto ou, no modo antigo, categoria) | `111222333444555777` |
 | `CATEGORY_TICKETS_ID` | opcional | Nome antigo/alternativo do mesmo destino | `111222333444555777` |
 | `TICKET_CATEGORIA_ID` | opcional | Categoria dos tickets (modo antigo, sem posicionamento por canal) | `111222333444555888` |
@@ -153,6 +153,10 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `CARGO_ADMIN_ID` | recomendado | Quem manda em tudo | ID do cargo ADM |
 | `CARGO_STAFF_ID` | recomendado | Staff (pode publicar painel, ver salas, usar comandos de staff) | ID do cargo Staff |
 | `CARGO_MEDIADOR_ID` | **importante** | Cargo marcado quando uma sala precisa de mediador | ID do cargo Mediador |
+| `CARGO_SUPORTE_ID` | recomendado | Atende os tickets (não entra nas filas de aposta) | ID do cargo Suporte |
+| `CARGO_AUX_ID` | opcional | Auxiliar do atendimento (também atende tickets) | ID do cargo Auxiliar |
+| `TELAGEM_URL_BASE` | opcional | Base do link da call de telagem (padrão `https://meet.jit.si`) | `https://meet.jit.si` |
+| `FREE_FIRE_LINK` | opcional | Link do botão "Abrir Free Fire" na sala liberada | `https://ff.garena.com/` |
 | `CANAL_LOGS_ID` | opcional | Canal de auditoria (também dá para definir com `/logs`) | ID do canal |
 | `COMISSAO_PADRAO` | não | Comissão padrão do mediador (`0.05` = 5%) | `0.05` |
 | `MOEDA` | não | Nome da moeda da loja | `Royal Coin` |
@@ -238,25 +242,59 @@ Mencionar Everyone · Anexar Arquivos.
 1. **Jogador** escolhe a faixa no menu do painel (R$ 0,50 até R$ 100,00) e o tipo de gelo.
 2. Quando o grupo fecha (2 jogadores no 1x1, 8 no 4x4…), o bot limpa a fila do painel e **cria a
    sala privada** (`#fila-gelo-normal-001`, `#fila-gelo-normal-002`…) **logo abaixo do canal de
-   referência**, só com os jogadores + staff.
+   referência**, só com os jogadores + mediadores/ADM.
 3. A sala nasce com o card **⏳ Aguardando · 1v1 Mobile Gelo Normal** — aposta, premiação e os
    jogadores numerados — e os botões **Confirmar Partida** e **Cancelar**.
 4. Cada confirmação aparece no chat da sala: *“✅ @Jogador1 confirmou a partida. Agora falta apenas
-   @Jogador2 para confirmar.”* e, na segunda, *“Todos confirmaram! Partida iniciando...”* — sempre
-   marcando @STAFF / @MEDIADOR.
+   @Jogador2 para confirmar.”* e, na segunda, *“Todos confirmaram! Partida iniciando...”* — marcando
+   só **@MEDIADOR / @ADM** (o atendimento de tickets não é chamado em partida).
 5. O bot marca o cargo Mediador. Um mediador clica em **👑 Assumir sala**.
-6. **💸 Enviar PIX** (botão) ou **`/pix`** na sala → a chave cadastrada aparece na sala e na DM dos
-   jogadores. O mediador confere os comprovantes e clica em **✅ Pagamento recebido**.
-7. **🎮 Liberar sala** → o mediador digita ID e senha; o bot publica para os jogadores.
+6. **💸 Liberar PIX** (botão) ou **`/pix`** na sala → a chave PIX **daquele mediador** aparece na
+   sala e na DM dos jogadores. Ele confere os comprovantes e clica em **✅ Pagamento recebido**.
+7. **🎮 Criar sala (Nix)** → a API cria a sala no jogo e o bot publica **ID, senha e um botão para
+   abrir o Free Fire** direto no canal da fila (onde as 15 mensagens foram publicadas).
 8. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
    comissão do mediador e auditoria.
 
 Estados da sala: `confirmando` → `aguardando_mediador` → `aguardando_pagamento` → `pago` →
 `sala_liberada` → `finalizada` / `cancelada`. O painel da sala se atualiza sozinho em cada etapa.
 
+### 5.1 Telagem (call para a triagem)
+
+Dentro do canal da partida, mediador/ADM usa **`/criar_telagem`**. O bot publica o painel
+**✅ Sala de Telagem Criada**, com o código no formato `nrk-yqzn-amm` e o botão **Entrar na Call**
+(link gerado na hora). O endereço padrão é `https://meet.jit.si`; para usar outro servidor de call,
+defina `TELAGEM_URL_BASE` nas variáveis de ambiente.
+
+### 5.2 Mediação: plantão, cargos e PIX individual
+
+1. **`/mediadores`** (só ADM) abre o **Módulo de Mediadores**: escolha os **cargos** que atuam como
+   mediador, o **canal do plantão** (bate-ponto) e o **canal de cadastro** (PIX). Os menus salvam na
+   hora; **Modo: Rodízio** alterna o modo e **Limpar Fila** zera o plantão.
+2. **`/painel_mediadores tipo:fila`** publica e fixa o painel **👤 Fila de Mediadores** no canal
+   atual, com **Entrar**, **Sair**, **Atualizar** e **Config**. Quem está no plantão fica na ordem
+   de chamada.
+3. **`/painel_mediadores tipo:registro`** publica a **💳 Central de Pagamentos: Mediadores**. O
+   mediador clica em **Configurar Pix** e cadastra **chave, nome completo e cidade** (modal, só ele
+   vê). **Verificar Cadastro** mostra o que já está salvo.
+
+Quando o mediador assume uma sala e clica em **Liberar PIX**, o bot usa a chave **individual** dele
+(nada de chave compartilhada), manda na sala e na DM dos jogadores. A criação da sala do jogo usa a
+API da Nix (`NIX_API_KEY`).
+
+> Separação de responsabilidades: **mediadores/ADM** atuam nas filas de aposta; **Suporte/Auxiliar**
+> (`CARGO_SUPORTE_ID`, `CARGO_AUX_ID`) atendem os tickets. As menções de partida usam só
+> mediador/ADM, e o canal do ticket é liberado só para o atendimento.
+
+### 5.3 Placar
+
+**`/verp @jogador`** mostra o placar público: **vitórias**, **derrotas** (com W.O.), aproveitamento,
+posição no ranking, total apostado e prêmios. Quem vence ganha **+1 vitória**; quem perde ganha
+**+1 derrota** — na hora, sem ajuste manual.
+
 ---
 
-## 6. Comandos (51)
+## 6. Comandos (55)
 
 **Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
@@ -289,6 +327,7 @@ Discord, sem abrir o Developer Portal.
 | Comando | Para que serve |
 |---|---|
 | `/perfil [usuario]` | Vitórias, derrotas, aproveitamento, moedas, giros, posição, convites |
+| `/verp [usuario]` | Placar público de vitórias/derrotas e posição no ranking |
 | `/ranking [tipo]` | Top 10 por vitórias, moedas ou giros |
 | `/apostas [usuario]` | Histórico das últimas apostas |
 | `/convites [usuario]` | Ranking de convites |
@@ -306,6 +345,9 @@ Discord, sem abrir o Developer Portal.
 | `/registrar_pix chave: [titular:] [comissao:]` | Salva sua chave PIX de mediador |
 | `/pix` | Envia sua chave na sala do AP que você está mediando |
 | `/painel_mediador` | Painel de controle da moderação |
+| `/criar_telagem` | Cria a sala de telagem (call) da partida no canal da sala |
+| `/mediadores` | Módulo de configuração: cargos, canal do plantão e canal do PIX (só ADM) |
+| `/painel_mediadores tipo:fila\|registro` | Publica e fixa o painel de plantão ou o de PIX (só ADM) |
 | `/vencedor time: [partida:]` | Declara o vencedor e fecha a aposta |
 | `/wo ausente: [partida:]` | Aplica W.O. |
 | `/receita_mediadores [dias:]` | Relatório de comissões |

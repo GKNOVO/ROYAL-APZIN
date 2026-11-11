@@ -10,6 +10,9 @@ const staff = require('../servicos/staff');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
 const tickets = require('../servicos/tickets');
+const plantao = require('../servicos/plantao');
+const salas = require('../servicos/salas');
+const mediadores = require('../servicos/mediadores');
 const auditoria = require('../servicos/auditoria');
 const { embed, embedSucesso, embedErro, reais, mencao, mencaoCargo, dataBR } = require('../util/embeds');
 const {
@@ -18,6 +21,7 @@ const {
   ehMediador,
   ehAdmin,
   ehStaff,
+  ehSuporte,
 } = require('../util/seguranca');
 
 const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
@@ -26,13 +30,14 @@ const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? Stri
  * Mensagem PÚBLICA na sala: quem confirmou, quem falta e a marcação da
  * @STAFF / @MEDIADOR — exatamente o texto combinado com a ORG.
  */
-async function avisarConfirmacao(client, { partida, userId, completo, faltando = [] }) {
+async function avisarConfirmacao(client, db, { partida, userId, completo, faltando = [] }) {
   try {
     const canal =
       client?.channels?.cache?.get?.(partida.canal_id) || (await client?.channels?.fetch?.(partida.canal_id));
     if (!canal?.send) return;
 
-    const cargos = [config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID].filter(Boolean);
+    // Só mediadores e ADM são marcados nas partidas (suporte fica nos tickets).
+    const cargos = mediadores.mencoes(db, partida.guild_id);
     const marcaStaff = cargos.length ? `\n${cargos.map((id) => mencaoCargo(id)).join(' ')}` : '';
     const restantes =
       faltando.length > 1
@@ -123,7 +128,7 @@ async function confirmarRegras(interaction, { db, client }, partidaId) {
       .jogadores(db, partidaId)
       .filter((linha) => linha.confirmou !== 1)
       .map((linha) => linha.user_id);
-    await avisarConfirmacao(client, {
+    await avisarConfirmacao(client, db, {
       partida: resultado.partida,
       userId: interaction.user.id,
       completo: resultado.completo,
@@ -260,7 +265,8 @@ async function handleBotao(interaction, ctx) {
 
   // "regras" e "liberar" abrem modal: showModal precisa ser a PRIMEIRA resposta,
   // por isso esses dois não podem ser adiados.
-  const abreModal = acao === 'regras' || acao === 'liberar' || acao.startsWith('bot');
+  const abreModal =
+    acao === 'regras' || acao === 'liberar' || acao.startsWith('bot') || acao === 'pixregistrar';
 
   // Confirma o clique imediatamente (deferUpdate) em todos os outros casos:
   // o Discord nunca mostra "O aplicativo não respondeu". O painel continua
@@ -375,6 +381,100 @@ async function handleBotao(interaction, ctx) {
         return true;
       }
 
+      case 'plantaoentrar': {
+        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+          await responderErro(interaction, 'Só mediadores/ADM entram na fila de plantão.');
+          return true;
+        }
+        plantao.entrar(db, { guildId: interaction.guildId, userId: interaction.user.id });
+        await interaction.editReply(plantao.painel(db, interaction.guildId));
+        const posicao = plantao.posicao(db, { guildId: interaction.guildId, userId: interaction.user.id });
+        await responderPrivado(interaction, {
+          embeds: [embedSucesso(`Você está no plantão${posicao ? ` (posição ${posicao})` : ''}. Boa! ⚡`)],
+        });
+        return true;
+      }
+
+      case 'plantaosair': {
+        const saiu = plantao.sair(db, { guildId: interaction.guildId, userId: interaction.user.id });
+        await interaction.editReply(plantao.painel(db, interaction.guildId));
+        await responderPrivado(interaction, {
+          embeds: [embedSucesso(saiu ? 'Você saiu do plantão.' : 'Você não estava no plantão.')],
+        });
+        return true;
+      }
+
+      case 'plantaostatus': {
+        await interaction.editReply(plantao.painel(db, interaction.guildId));
+        return true;
+      }
+
+      case 'plantaoconfig': {
+        if (!ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Só ADM pode abrir a configuração da mediação.');
+          return true;
+        }
+        await responderPrivado(interaction, mediadores.painelConfig(db, interaction.guildId));
+        return true;
+      }
+
+      case 'pixregistrar': {
+        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+          await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');
+          return true;
+        }
+        const { abrirModalPix } = require('./modais');
+        await abrirModalPix(interaction);
+        return true;
+      }
+
+      case 'pixverificar': {
+        const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+        const corpo = registro?.pix_chave
+          ? `**Chave PIX:** \`${registro.pix_chave}\`\n**Titular:** ${registro.pix_titular || '—'}\n` +
+            `**Cidade:** ${registro.pix_cidade || '—'}\n**Comissão:** ${(registro.comissao * 100).toFixed(1)}%`
+          : 'Você ainda não cadastrou PIX. Clique em **Configurar Pix**.';
+        await responderPrivado(interaction, { embeds: [embed('💠 Seu cadastro PIX', corpo)] });
+        return true;
+      }
+
+      case 'criarsala': {
+        const partida = partidas.buscar(db, args[0]);
+        if (!partida) {
+          await responderErro(interaction, 'Sala não encontrada.');
+          return true;
+        }
+        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+          await responderErro(interaction, 'Só o mediador desta sala pode criar a sala do jogo.');
+          return true;
+        }
+        if (partida.mediador_id && partida.mediador_id !== interaction.user.id && !ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Essa sala é de outro mediador.');
+          return true;
+        }
+        try {
+          const criada = await salas.criarSalaDaPartida(client, db, { partidaId: args[0] });
+          await fluxo.atualizarPartida(client, db, args[0]);
+          await auditoria.registrar(db, client, {
+            guildId: interaction.guildId,
+            autorId: interaction.user.id,
+            acao: 'Sala do jogo criada',
+            detalhe: `Sala ${args[0]} · room ${criada.dados.room_id}`,
+          });
+          await responderPrivado(interaction, {
+            embeds: [
+              embedSucesso(
+                `Sala criada! 🎮\n**ID:** \`${criada.dados.room_id}\` · **Senha:** \`${criada.dados.password}\`` +
+                  (criada.canalId ? `\nID e senha publicados em <#${criada.canalId}>.` : ''),
+              ),
+            ],
+          });
+        } catch (erro) {
+          await responderErro(interaction, erro.message);
+        }
+        return true;
+      }
+
       case 'ranking': {
         const usuarios = require('../servicos/usuarios');
         const lista = usuarios.top(db, interaction.guildId, 'vitorias', config.LIMITES.RANKING);
@@ -453,8 +553,8 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'fecharticket': {
-        if (!ehStaff(interaction.member)) {
-          await responderErro(interaction, 'Só a staff pode fechar o ticket.');
+        if (!ehSuporte(interaction.member)) {
+          await responderErro(interaction, 'Só o atendimento (Suporte/Auxiliar) pode fechar o ticket.');
           return true;
         }
         await responderPrivado(interaction, { content: '🔒 Fechando o ticket em 5 segundos...' });

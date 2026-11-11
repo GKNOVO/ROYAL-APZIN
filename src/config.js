@@ -170,7 +170,15 @@ const config = {
   CARGO_ADMIN_ID: texto(process.env.CARGO_ADMIN_ID),
   CARGO_STAFF_ID: texto(process.env.CARGO_STAFF_ID),
   CARGO_MEDIADOR_ID: texto(process.env.CARGO_MEDIADOR_ID),
+  /** Cargos do atendimento (tickets) — não atuam nas filas de aposta. */
+  CARGO_SUPORTE_ID: texto(process.env.CARGO_SUPORTE_ID),
+  CARGO_AUX_ID: texto(process.env.CARGO_AUX_ID),
   CANAL_LOGS_ID: texto(process.env.CANAL_LOGS_ID),
+
+  /** Telagem: base do link da call de triagem (ex: https://meet.jit.si). */
+  TELAGEM_URL_BASE: texto(process.env.TELAGEM_URL_BASE, 'https://meet.jit.si'),
+  /** Botão "Abrir Free Fire" que acompanha o ID/senha da sala. */
+  FREE_FIRE_LINK: texto(process.env.FREE_FIRE_LINK, 'https://ff.garena.com/'),
 
   COMISSAO_PADRAO: numero(process.env.COMISSAO_PADRAO, 0.05, 0, 0.5),
   MOEDA: texto(process.env.MOEDA, 'Royal Coin'),

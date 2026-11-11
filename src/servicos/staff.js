@@ -21,7 +21,7 @@ function obter(db, guildId, userId) {
   );
 }
 
-function registrarPix(db, { guildId, userId, chave, titular = null, comissao = null }) {
+function registrarPix(db, { guildId, userId, chave, titular = null, cidade = null, comissao = null }) {
   const limpa = String(chave || '').trim();
   if (limpa.length < 3) throw new Error('A chave PIX parece curta demais.');
   if (limpa.length > 200) throw new Error('A chave PIX é longa demais.');
@@ -35,9 +35,18 @@ function registrarPix(db, { guildId, userId, chave, titular = null, comissao = n
 
   db.prepare(
     `UPDATE staff
-        SET pix_chave = ?, pix_titular = ?, comissao = ?, ativo = 1, registrado_em = ?, atualizado_em = ?
+        SET pix_chave = ?, pix_titular = ?, pix_cidade = ?, comissao = ?, ativo = 1, registrado_em = ?, atualizado_em = ?
       WHERE guild_id = ? AND user_id = ?`,
-  ).run(limpa, titular ? String(titular).trim().slice(0, 120) : atual.pix_titular, valorComissao, agora(), agora(), String(guildId), String(userId));
+  ).run(
+    limpa,
+    titular ? String(titular).trim().slice(0, 120) : atual.pix_titular,
+    cidade ? String(cidade).trim().slice(0, 80) : atual.pix_cidade ?? null,
+    valorComissao,
+    agora(),
+    agora(),
+    String(guildId),
+    String(userId),
+  );
 
   return obter(db, guildId, userId);
 }

@@ -16,6 +16,7 @@ function abrirBanco(caminho) {
     for (const sql of ESQUEMA) db.exec(sql);
   });
   criar();
+  migrar(db);
 
   try {
     db.motor = motor;
@@ -23,6 +24,26 @@ function abrirBanco(caminho) {
     /* se não der para anotar, seguimos sem */
   }
   return db;
+}
+
+/**
+ * Migrações leves: acrescenta colunas novas em bancos que já existiam
+ * (CREATE TABLE IF NOT EXISTS não altera tabela antiga).
+ */
+function migrar(db) {
+  let colunas = [];
+  try {
+    colunas = db.prepare('PRAGMA table_info(staff)').all().map((coluna) => coluna.name);
+  } catch {
+    return; // banco novo: o ESQUEMA já criou tudo
+  }
+  if (!colunas.includes('pix_cidade')) {
+    try {
+      db.exec('ALTER TABLE staff ADD COLUMN pix_cidade TEXT');
+    } catch (erro) {
+      console.warn('[db] não consegui adicionar staff.pix_cidade:', erro.message);
+    }
+  }
 }
 
 /** Lê/escreve configuração simples por servidor. */

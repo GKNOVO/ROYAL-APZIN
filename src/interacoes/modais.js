@@ -11,6 +11,8 @@ const {
 } = require('discord.js');
 const config = require('../config');
 const partidas = require('../servicos/partidas');
+const staff = require('../servicos/staff');
+const mediadores = require('../servicos/mediadores');
 const fluxo = require('../servicos/fluxo');
 const { responderPrivado, responderErro, ehMediador, ehAdmin } = require('../util/seguranca');
 const { embedSucesso } = require('../util/embeds');
@@ -187,6 +189,74 @@ async function aplicarPerfilBot(interaction, client, tipo) {
   }
 }
 
+/** Modal do PIX individual do mediador (chave, nome completo e cidade). */
+async function abrirModalPix(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('ap:modalpix')
+    .setTitle('Registrar PIX de mediador')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('chave')
+          .setLabel('Chave PIX (CPF, e-mail, telefone ou aleatória)')
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(3)
+          .setMaxLength(200)
+          .setRequired(true),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('titular')
+          .setLabel('Nome completo do titular')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(120)
+          .setRequired(true),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('cidade')
+          .setLabel('Cidade de registro da conta')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(80)
+          .setRequired(true),
+      ),
+    );
+
+  return interaction.showModal(modal);
+}
+
+async function aplicarPix(interaction, db) {
+  if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+    await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');
+    return true;
+  }
+
+  try {
+    const chave = interaction.fields.getTextInputValue('chave');
+    const titular = interaction.fields.getTextInputValue('titular');
+    const cidade = interaction.fields.getTextInputValue('cidade');
+    const registro = staff.registrarPix(db, {
+      guildId: interaction.guildId,
+      userId: interaction.user.id,
+      chave,
+      titular,
+      cidade,
+    });
+
+    await responderPrivado(interaction, {
+      embeds: [
+        embedSucesso(
+          `PIX salvo! ✅\n**Chave:** \`${registro.pix_chave}\`\n**Titular:** ${registro.pix_titular || '—'}\n` +
+            `**Cidade:** ${registro.pix_cidade || '—'}\n\n_Ao assumir uma sala, é essa chave que vai para os jogadores._`,
+        ),
+      ],
+    });
+  } catch (erro) {
+    await responderErro(interaction, erro.message);
+  }
+  return true;
+}
+
 async function handleModal(interaction, { db, client }) {
   const partes = String(interaction.customId || '').split(':');
   if (partes[0] !== 'ap') return false;
@@ -197,6 +267,7 @@ async function handleModal(interaction, { db, client }) {
   try {
     // Modais do /botperfil (nome, avatar, descrição e status do bot).
     if (String(tipo || '').startsWith('modalbot')) return await aplicarPerfilBot(interaction, client, tipo);
+    if (tipo === 'modalpix') return await aplicarPix(interaction, db);
 
     if (tipo === 'modalregras') {
       const texto = interaction.fields.getTextInputValue('regra');
@@ -231,4 +302,11 @@ async function handleModal(interaction, { db, client }) {
   }
 }
 
-module.exports = { abrirModalRegras, abrirModalSala, abrirModalBotPerfil, CAMPOS_BOT, handleModal };
+module.exports = {
+  abrirModalRegras,
+  abrirModalSala,
+  abrirModalBotPerfil,
+  abrirModalPix,
+  CAMPOS_BOT,
+  handleModal,
+};

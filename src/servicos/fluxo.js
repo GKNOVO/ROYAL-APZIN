@@ -20,6 +20,7 @@ const filas = require('./filas');
 const partidas = require('./partidas');
 const staff = require('./staff');
 const paineis = require('./paineis');
+const mediadores = require('./mediadores');
 const blacklist = require('./blacklist');
 const auditoria = require('./auditoria');
 
@@ -117,7 +118,8 @@ function embedPartida(partida, lista) {
       break;
     case STATUS.PAGO:
       descricao =
-        '**Passo 4 · Sala**\nPagamento confirmado ✅\nO mediador agora libera o ID e a senha da sala.';
+        '**Passo 4 · Sala**\nPagamento confirmado ✅\n' +
+        'Clique em **Criar sala (Nix)**: o ID e a senha são publicados automaticamente no canal da fila.';
       cor = config.CORES.gelo;
       campos.push({
         name: 'PIX do mediador',
@@ -201,7 +203,7 @@ function componentesPartida(partida) {
     case STATUS.PAGO:
       linhas.push(
         linha(
-          botao(`ap:liberar:${id}`, 'Liberar sala', '🎮', ButtonStyle.Primary),
+          botao(`ap:criarsala:${id}`, 'Criar sala (Nix)', '🎮', ButtonStyle.Primary),
           botao(`ap:cancelar:${id}`, 'Cancelar', '🚫', ButtonStyle.Danger),
         ),
       );
@@ -264,13 +266,12 @@ async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogador
       allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.EmbedLinks],
     })),
   ];
-  for (const cargo of [config.CARGO_MEDIADOR_ID, config.CARGO_STAFF_ID, config.CARGO_ADMIN_ID]) {
-    if (cargo) {
-      permissoes.push({
-        id: cargo,
-        allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.EmbedLinks],
-      });
-    }
+  // Só mediadores e ADM veem a sala de aposta (suporte atende apenas tickets).
+  for (const cargo of mediadores.mencoes(db, guild.id)) {
+    permissoes.push({
+      id: cargo,
+      allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.EmbedLinks],
+    });
   }
 
   // #fila-gelo-normal-001 — numeração contínua por tipo de entrada.
@@ -300,10 +301,7 @@ async function publicarSala(client, db, partida) {
       allowedMentions: { parse: ['users'] },
     });
     partidas.definirMensagem(db, partida.id, mensagem.id);
-    await canal.send({
-      content: '📌 Enviem o **ID e a senha** da sala aqui quando ela estiver criada. O mediador confere tudo nesta sala.',
-      allowedMentions: { parse: [] },
-    }).catch(() => {});
+    // Nada de "mandem o ID e a senha": o mediador cria a sala pelo bot.
     return true;
   } catch (erro) {
     console.error('[fluxo] não consegui publicar a sala:', erro.message);

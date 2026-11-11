@@ -154,6 +154,14 @@ const ESQUEMA = [
     PRIMARY KEY (guild_id, convidado_id)
   )`,
 
+  // Bate-ponto dos mediadores (quem está online para pegar partida)
+  `CREATE TABLE IF NOT EXISTS plantao (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    entrou_em INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+  )`,
+
   // Cópia das DMs enviadas pelo bot (auditoria)
   `CREATE TABLE IF NOT EXISTS logs_dm (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -19,6 +19,9 @@ const modulos = [
   require('./moderacao'),
   require('./utilidades'),
   require('./botperfil'),
+  require('./mediadores'),
+  require('./telagem'),
+  require('./verp'),
   require('./nix'),
 ];
 

@@ -26,6 +26,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFla
 const config = require('../config');
 const { obterConfig } = require('../db');
 const auditoria = require('./auditoria');
+const mediadores = require('./mediadores');
 const { embed, mencao, mencaoCargo } = require('../util/embeds');
 
 const TIPOS = {
@@ -241,8 +242,9 @@ function permissoesDoTicket(guild, client, userId) {
       allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.AttachFiles, A.EmbedLinks],
     },
   ];
-  for (const cargo of [config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID, config.CARGO_ADMIN_ID]) {
-    if (cargo) permissoes.push({ id: cargo, allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory] });
+  // Ticket é atendimento: só cargos de Suporte/Auxiliar (mediadores cuidam das filas).
+  for (const cargo of mediadores.cargosSuporte()) {
+    permissoes.push({ id: cargo, allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory] });
   }
   return permissoes;
 }
@@ -340,7 +342,8 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
     );
   }
 
-  const cargos = [config.CARGO_ADMIN_ID, config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID].filter(Boolean);
+  // Só o atendimento (Suporte/Auxiliar) é marcado no ticket.
+  const cargos = mediadores.cargosSuporte();
   const chamada = [mencao(usuario.id), ...cargos.map((id) => mencaoCargo(id))].join(' ');
   const ondeNasceu = categoria
     ? ` em **${categoria.name}**`

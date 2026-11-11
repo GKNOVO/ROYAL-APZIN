@@ -635,6 +635,162 @@ function resposta(interaction) {
     passar('matchmaking: 2ª confirmação libera "Todos confirmaram! Partida iniciando..."');
   }
 
+  // ---------- mediação: configuração, plantão, PIX, telagem e /verp ----------
+  {
+    const cfgMed = require('../src/servicos/mediadores');
+    const plantao = require('../src/servicos/plantao');
+    const telagem = require('../src/servicos/telagem');
+    const salas = require('../src/servicos/salas');
+    const { handleBotao: cliqueMed } = require('../src/interacoes/botoes');
+    const { handleModal: modalMed } = require('../src/interacoes/modais');
+
+    // configuração do módulo (cargos, canais e modo)
+    cfgMed.definirCargos(db, 'g1', ['cargo-med', 'cargo-adm']);
+    assert.deepStrictEqual(cfgMed.cargos(db, 'g1'), ['cargo-med', 'cargo-adm']);
+    cfgMed.definirCanalBatePonto(db, 'g1', 'canal-ponto');
+    cfgMed.definirCanalConfigPix(db, 'g1', 'canal-pixcfg');
+    cfgMed.definirModo(db, 'g1', 'fila');
+    assert.strictEqual(cfgMed.modo(db, 'g1'), 'fila');
+    assert.strictEqual(cfgMed.canalBatePonto(db, 'g1'), 'canal-ponto');
+
+    const painelMediadores = cfgMed.painelConfig(db, 'g1');
+    assert.ok(painelMediadores.embeds[0].toJSON().title.includes('Módulo de Mediadores'));
+    assert.deepStrictEqual(
+      painelMediadores.components.flatMap((linha) => linha.toJSON().components.map((item) => item.custom_id)),
+      ['ap:medcargos', 'ap:medfila', 'ap:medpix', 'ap:medlimpar', 'ap:medgestaopix', 'ap:medmodo', 'ap:medreenviar'],
+    );
+    passar('/mediadores: painel com cargos, canais (plantão/PIX) e modo salvos no banco');
+
+    // plantão (bate-ponto)
+    assert.strictEqual(plantao.entrar(db, { guildId: 'g1', userId: 'med1' }), true);
+    assert.strictEqual(plantao.entrar(db, { guildId: 'g1', userId: 'med1' }), false);
+    plantao.entrar(db, { guildId: 'g1', userId: 'med2' });
+    assert.strictEqual(plantao.total(db, 'g1'), 2);
+    assert.strictEqual(plantao.posicao(db, { guildId: 'g1', userId: 'med2' }), 2);
+    assert.strictEqual(plantao.proximo(db, 'g1'), 'med1');
+    assert.ok(plantao.painel(db, 'g1').embeds[0].toJSON().description.includes('2 mediador(es) na fila'));
+    assert.strictEqual(plantao.sair(db, { guildId: 'g1', userId: 'med2' }), 1);
+    plantao.limpar(db, 'g1');
+    assert.ok(plantao.painel(db, 'g1').embeds[0].toJSON().description.includes('Nenhum mediador na fila'));
+    assert.ok(plantao.painelRegistroPix().embeds[0].toJSON().title.includes('Central de Pagamentos'));
+    passar('plantão: fila de mediadores, rodízio e painel de PIX');
+
+    // botão Entrar do painel de plantão
+    const entrarPlantao = fakeInteraction({ userId: 'med1', roles: ['cargo-med'], guildId: 'g1' });
+    entrarPlantao.customId = 'ap:plantaoentrar';
+    entrarPlantao.isButton = () => true;
+    entrarPlantao.guild = { id: 'g1' };
+    await cliqueMed(entrarPlantao, { db, client: null });
+    assert.strictEqual(plantao.total(db, 'g1'), 1);
+    assert.ok(entrarPlantao.chamadas.editReply.embeds[0].toJSON().description.includes('1 mediador(es) na fila'));
+    passar('plantão: botão Entrar coloca o mediador na fila e atualiza o painel');
+
+    // PIX individual pelo modal da Central de Pagamentos
+    const modalPix = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator], guildId: 'g1' });
+    modalPix.customId = 'ap:modalpix';
+    modalPix.fields = {
+      getTextInputValue: (nome) => ({ chave: 'pix@med', titular: 'Mediador Teste', cidade: 'São Paulo' })[nome],
+    };
+    await modalMed(modalPix, { db, client: null });
+    const registroMed = staff.obter(db, 'g1', 'u1');
+    assert.strictEqual(registroMed.pix_chave, 'pix@med');
+    assert.strictEqual(registroMed.pix_cidade, 'São Paulo');
+    passar('PIX: modal salva chave, titular e cidade do mediador');
+
+    // telagem
+    const codigo = telagem.novoCodigo();
+    assert.ok(/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(codigo), codigo);
+    assert.ok(telagem.link(codigo).includes('royal-ap-'));
+    const painelTelagem = telagem.painel(codigo);
+    assert.ok(painelTelagem.embeds[0].toJSON().title.includes('Sala de Telagem Criada'));
+    assert.ok(painelTelagem.embeds[0].toJSON().description.includes(codigo));
+    assert.strictEqual(painelTelagem.components[0].toJSON().components[0].style, 5, 'botão de link');
+    passar('telagem: código 3-4-3, link da call e painel "Sala de Telagem Criada"');
+
+    // /criar_telagem dentro da sala da partida
+    const { client: clientTelagem, guild: guildTelagem } = ambienteFalso();
+    const salaTelagem = await guildTelagem.channels.create({ name: 'fila-gelo-normal-050' });
+    partidas.criar(db, {
+      guildId: 'g1',
+      modo: 'x1mobile',
+      preco: 500,
+      gelo: 'normal',
+      canalId: salaTelagem.id,
+      jogadores: [{ userId: 'u1', time: 1 }, { userId: 'u2', time: 2 }],
+    });
+    const comandoTelagem = fakeInteraction({
+      commandName: 'criar_telagem',
+      userId: 'med1',
+      roles: ['cargo-med'],
+      channel: salaTelagem,
+      channelId: salaTelagem.id,
+    });
+    await comandos.executar(comandoTelagem, { db, client: clientTelagem });
+    assert.strictEqual(salaTelagem.enviadas.length, 1);
+    assert.ok(salaTelagem.enviadas[0].payload.embeds[0].toJSON().title.includes('Sala de Telagem'));
+    passar('/criar_telagem: publica o painel com link da call no canal da partida');
+
+    // /verp
+    const verp = fakeInteraction({ commandName: 'verp', options: { usuario: { id: 'u1', username: 'u1' } } });
+    await comandos.executar(verp, { db, client: null });
+    const placar = resposta(verp).embeds[0].toJSON();
+    assert.ok(placar.title.includes('Placar'));
+    assert.ok(placar.fields.some((campo) => campo.name.includes('Vitórias') && campo.value === '2'));
+    assert.ok(placar.fields.some((campo) => campo.name.includes('Derrotas')));
+    passar('/verp: placar de vitórias e derrotas do jogador');
+
+    // /mediadores e /painel_mediadores (ADM)
+    const comandoMediadores = fakeInteraction({
+      commandName: 'mediadores',
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(comandoMediadores, { db, client: null });
+    assert.ok(resposta(comandoMediadores).embeds[0].toJSON().title.includes('Módulo de Mediadores'));
+    const semAdmConfig = fakeInteraction({ commandName: 'mediadores' });
+    await comandos.executar(semAdmConfig, { db, client: null });
+    assert.ok(resposta(semAdmConfig).embeds[0].toJSON().description.includes('ADM'));
+
+    const canalPonto = {
+      id: 'canal-ponto-bp',
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalPonto.enviadas.push(payload);
+        return { id: 'msg-ponto', async pin() {} };
+      },
+    };
+    const comandoPainelMed = fakeInteraction({
+      commandName: 'painel_mediadores',
+      channel: canalPonto,
+      channelId: canalPonto.id,
+      perms: [PermissionsBitField.Flags.Administrator],
+      options: { tipo: 'fila' },
+    });
+    await comandos.executar(comandoPainelMed, { db, client: null });
+    assert.strictEqual(canalPonto.enviadas.length, 1);
+    assert.ok(canalPonto.enviadas[0].embeds[0].toJSON().title.includes('Fila de Mediadores'));
+    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_bateponto'), 'canal-ponto-bp');
+    passar('/mediadores e /painel_mediadores: painel e plantão publicados pelo ADM');
+
+    // card pago tem o botão de criar a sala pela Nix
+    const partidaPaga = partidas.criar(db, {
+      guildId: 'g1',
+      modo: 'x1mobile',
+      preco: 100,
+      gelo: 'normal',
+      canalId: 'canal-pago',
+      jogadores: [{ userId: 'u1', time: 1 }, { userId: 'u2', time: 2 }],
+    });
+    partidas.confirmar(db, partidaPaga.id, 'u1');
+    partidas.confirmar(db, partidaPaga.id, 'u2');
+    partidas.assumir(db, partidaPaga.id, 'med1', 0.05);
+    const paga = partidas.marcarPago(db, partidaPaga.id);
+    const botoesPago = fluxo.componentesPartida(paga)[0].toJSON().components.map((botao) => botao.label);
+    assert.deepStrictEqual(botoesPago, ['Criar sala (Nix)', 'Cancelar']);
+    assert.strictEqual(salas.modoNix(paga), 'ap_padrao');
+    passar('partida paga: botão "Criar sala (Nix)" no lugar de digitar ID/senha');
+  }
+
   // ---------- comandos ----------
   {
     const definicoes = comandos.definicoes();
@@ -645,6 +801,7 @@ function resposta(interaction) {
       'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'pix', 'ranking',
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
       'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
+      'criar_telagem', 'verp', 'mediadores', 'painel_mediadores',
     ];
     for (const nome of obrigatorios) {
       assert.ok(nomes.includes(nome), `faltou o comando /${nome}`);
@@ -653,9 +810,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 51);
-    assert.strictEqual(new Set(nomes).size, 51, 'nome de comando repetido');
-    passar('comandos: 51 registrados (36 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 55);
+    assert.strictEqual(new Set(nomes).size, 55, 'nome de comando repetido');
+    passar('comandos: 55 registrados (40 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(
