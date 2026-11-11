@@ -5,7 +5,7 @@
  *   node testes/rodar.js
  *
  * Testa banco, filas, partidas, PIX, fluxo da sala, painéis, tickets, API da Nix
- * e os 51 comandos.
+ * e os 55 comandos.
  */
 
 process.env.DISCORD_TOKEN = 'token-de-teste';
@@ -203,10 +203,10 @@ function resposta(interaction) {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((linha) => linha.name);
-    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm']) {
+    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao']) {
       assert.ok(tabelas.includes(esperada), `faltou a tabela ${esperada}`);
     }
-    passar('banco: 13 tabelas criadas automaticamente');
+    passar('banco: 14 tabelas criadas automaticamente');
   }
 
   // ---------- usuários e economia ----------
@@ -575,15 +575,16 @@ function resposta(interaction) {
     passar('modos: os 15 painéis existem com os títulos certos');
   }
 
-  // ---------- matchmaking: sala abaixo da referência + confirmação pública ----------
+  // ---------- matchmaking: sala na categoria + confirmação pública ----------
   {
     const { client, guild } = ambienteFalso();
     const db3 = abrirBanco(path.join(pasta, 'match.db'));
 
-    const referencia = await guild.channels.create({ name: '🎯・AP' });
-    referencia.position = 6;
-    const referenciaAntes = config.CANAL_FILA_ID;
-    config.CANAL_FILA_ID = referencia.id;
+    // Sala privada nasce DENTRO da categoria configurada (sem canal de referência).
+    const categoriaFilas = { id: 'cat-filas-ap', name: 'FILAS AP', type: ChannelType.GuildCategory };
+    guild.channels.cache.set(categoriaFilas.id, categoriaFilas);
+    const categoriaAntes = config.CATEGORIA_FILAS_ID;
+    config.CATEGORIA_FILAS_ID = categoriaFilas.id;
 
     filas.entrar(db3, { guildId: guild.id, modo: 'x1mobile', preco: 50, gelo: 'normal', userId: 'k1' });
     const fechou = await fluxo.entrarNaFila(client, db3, {
@@ -593,13 +594,12 @@ function resposta(interaction) {
       preco: 50,
       gelo: 'normal',
     });
-    config.CANAL_FILA_ID = referenciaAntes;
+    config.CATEGORIA_FILAS_ID = categoriaAntes;
 
     assert.strictEqual(fechou.fechou, true);
     const sala = client.channels.cache.get(fechou.canalId);
     assert.strictEqual(sala.name, 'fila-gelo-normal-001');
-    assert.strictEqual(sala.parentId, null, 'sala fora de categoria');
-    assert.strictEqual(sala.posicao, 7, 'logo abaixo do canal de referência');
+    assert.strictEqual(sala.parentId, 'cat-filas-ap', 'sala criada DENTRO da categoria de filas');
 
     const cardSala = sala.enviadas[0].payload.embeds[0].toJSON();
     assert.ok(cardSala.title.includes('Aguardando'));
@@ -608,7 +608,7 @@ function resposta(interaction) {
     assert.strictEqual(camposSala.Aposta, 'R$ 0,50');
     assert.ok(camposSala.Jogadores.includes('1. <@k1>'), camposSala.Jogadores);
     assert.ok(camposSala.Jogadores.includes('2. <@k2>'), camposSala.Jogadores);
-    passar('matchmaking: sala #fila-gelo-normal-001 abaixo da referência com card "Aguardando"');
+    passar('matchmaking: sala #fila-gelo-normal-001 dentro da categoria com card "Aguardando"');
 
     const { handleBotao: cliqueBotao } = require('../src/interacoes/botoes');
     const confirmar1 = fakeInteraction({ userId: 'k1' });
@@ -660,6 +660,37 @@ function resposta(interaction) {
       ['ap:medcargos', 'ap:medfila', 'ap:medpix', 'ap:medlimpar', 'ap:medgestaopix', 'ap:medmodo', 'ap:medreenviar'],
     );
     passar('/mediadores: painel com cargos, canais (plantão/PIX) e modo salvos no banco');
+
+    // Menus de CARGO e de CANAL: ack imediato e 2 cargos salvos juntos
+    const { handleSelect } = require('../src/interacoes/selects');
+    cfgMed.definirCargos(db, 'g1', ['cargo-antigo']);
+    const menuCargos = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator], guildId: 'g1' });
+    menuCargos.customId = 'ap:medcargos';
+    menuCargos.values = ['cargo-med', 'cargo-adm'];
+    menuCargos.isRoleSelectMenu = () => true;
+    await handleSelect(menuCargos, { db, client: null });
+    assert.strictEqual(menuCargos.chamadas.deferUpdate, true, 'deferUpdate ANTES do banco');
+    assert.deepStrictEqual(cfgMed.cargos(db, 'g1'), ['cargo-med', 'cargo-adm'], 'os 2 cargos salvos juntos');
+    assert.ok(menuCargos.chamadas.editReply, 'painel redesenhado com a escolha');
+    passar('menus: 2 cargos (Mediador + ADM) salvos juntos e ack imediato');
+
+    const menuCanal = fakeInteraction({ perms: [PermissionsBitField.Flags.Administrator], guildId: 'g1' });
+    menuCanal.customId = 'ap:medfila';
+    menuCanal.values = ['canal-ponto'];
+    menuCanal.isChannelSelectMenu = () => true;
+    await handleSelect(menuCanal, { db, client: null });
+    assert.strictEqual(menuCanal.chamadas.deferUpdate, true, 'canal também confirma na hora');
+    assert.strictEqual(cfgMed.canalBatePonto(db, 'g1'), 'canal-ponto');
+    passar('menus: canal do bate-ponto reconhecido (channel select tratado)');
+
+    // Painel de plantão sem o botão "Config" (só Entrar/Sair/Atualizar)
+    const botoesPlantao = plantao.painel(db, 'g1').components[0].toJSON().components;
+    assert.deepStrictEqual(
+      botoesPlantao.map((botao) => botao.label),
+      ['Entrar', 'Sair', 'Atualizar'],
+      'painel de plantão sem Config',
+    );
+    passar('plantão: painel só com Entrar, Sair e Atualizar');
 
     // plantão (bate-ponto)
     assert.strictEqual(plantao.entrar(db, { guildId: 'g1', userId: 'med1' }), true);
@@ -729,6 +760,21 @@ function resposta(interaction) {
     assert.strictEqual(salaTelagem.enviadas.length, 1);
     assert.ok(salaTelagem.enviadas[0].payload.embeds[0].toJSON().title.includes('Sala de Telagem'));
     passar('/criar_telagem: publica o painel com link da call no canal da partida');
+
+    // /criar_telagem fora da partida: também funciona (sem falso negativo)
+    const { client: clientAvulso, guild: guildAvulso } = ambienteFalso();
+    const canalAvulso = await guildAvulso.channels.create({ name: 'telagem-staff' });
+    const comandoAvulso = fakeInteraction({
+      commandName: 'criar_telagem',
+      userId: 'med1',
+      roles: ['cargo-med'],
+      channel: canalAvulso,
+      channelId: canalAvulso.id,
+    });
+    await comandos.executar(comandoAvulso, { db, client: clientAvulso });
+    assert.strictEqual(canalAvulso.enviadas.length, 1, 'publica o painel mesmo sem partida no canal');
+    assert.ok(resposta(comandoAvulso).embeds[0].toJSON().description.includes('criada'));
+    passar('/criar_telagem: funciona em qualquer canal da staff');
 
     // /verp
     const verp = fakeInteraction({ commandName: 'verp', options: { usuario: { id: 'u1', username: 'u1' } } });
@@ -888,18 +934,18 @@ function resposta(interaction) {
     assert.ok(resposta(status).embeds[0].toJSON().title.includes('Status'));
     passar('/boombot status: mostra saúde do bot');
 
-    // /boombot setfila: canal de referência das filas
-    const setfila = fakeInteraction({
+    // /boombot setcategoria: categoria onde as salas de AP nascem
+    const setcategoria = fakeInteraction({
       commandName: 'boombot',
-      options: { sub: 'setfila', canal: { id: 'canal-ref-fila', name: '🎯・AP' } },
+      options: { sub: 'setcategoria', categoria: { id: 'cat-filas-ap', name: 'FILAS AP' } },
       perms: [PermissionsBitField.Flags.Administrator],
     });
-    await comandos.executar(setfila, {
+    await comandos.executar(setcategoria, {
       db,
       client: { ws: { ping: 1 }, guilds: { cache: new Collection() } },
     });
-    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_fila', null), 'canal-ref-fila');
-    passar('/boombot setfila: salva o canal de referência das filas');
+    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'categoria_filas', null), 'cat-filas-ap');
+    passar('/boombot setcategoria: salva a CATEGORIA das salas de AP');
 
     // /botperfil: painel ADM para trocar nome, avatar, descrição e status
     const botperfil = fakeInteraction({
@@ -1048,13 +1094,15 @@ function resposta(interaction) {
     assert.strictEqual(semCategoria.canal.parentId, null, 'não invade categoria de filas nem "suporte"');
     passar('ticket: sem ID configurado não cai em categoria aleatória');
 
-    // Ticket por CANAL de referência: nasce fora de categoria, logo abaixo dele
+    // Ticket com ID de CANAL (modo antigo): usa a CATEGORIA onde o canal está
     const { client: clientRef, guild: guildRef } = ambienteFalso();
+    const catRef = { id: 'cat-ref', name: 'ATENDIMENTO', type: ChannelType.GuildCategory };
+    guildRef.channels.cache.set(catRef.id, catRef);
     const canalRef = {
       id: 'canal-referencia',
       name: '🎫・ABRIR-TICKET',
       type: ChannelType.GuildText,
-      position: 4,
+      parentId: catRef.id,
       enviadas: [],
       isTextBased: () => true,
       async send(payload) {
@@ -1077,10 +1125,9 @@ function resposta(interaction) {
     cfg.CATEGORIA_SUPORTE_ID = suporteAntigo;
     cfg.TICKET_DESTINO_ID = destinoAntigo;
 
-    assert.strictEqual(porCanal.canal.parentId, null, 'ticket fora de categoria');
-    assert.strictEqual(porCanal.canal.posicao, 5, 'logo abaixo do canal de referência');
+    assert.strictEqual(porCanal.canal.parentId, 'cat-ref', 'ticket nasce na categoria do canal informado');
     assert.strictEqual(canalRef.enviadas.length, 0, 'nada é enviado no chat geral');
-    passar('ticket: canal de referência cria o ticket logo abaixo, sem mensagem pública');
+    passar('ticket: ID de canal aponta para a categoria dele, sem mensagem pública');
 
     // Botão do painel cria o ticket e devolve o link direto
     const cliqueTicket = fakeInteraction({ commandName: undefined, userId: 'j7' });
@@ -1249,11 +1296,9 @@ function resposta(interaction) {
     );
     cfg2.CATEGORY_TICKETS_ID = antesCategoria;
 
-    assert.strictEqual(porCanal.canal.parentId, null, 'ticket nasce FORA de categoria');
-    assert.strictEqual(porCanal.canalDestino?.id, 'canal-atendimento');
-    assert.strictEqual(porCanal.canal.posicao, 1, 'posicionado logo abaixo do canal de referência');
+    assert.strictEqual(porCanal.canal.parentId, 'cat-atendimento', 'ticket dentro da categoria do canal');
     assert.strictEqual(avisos.length, 0, 'nenhuma mensagem pública no chat geral');
-    passar('ticket: aceita ID de CANAL, nasce logo abaixo e sem aviso público');
+    passar('ticket: aceita ID de CANAL e usa a categoria dele, sem aviso público');
 
     // /boombot setticket salva a preferência no banco
     const setticket = fakeInteraction({
@@ -1262,31 +1307,30 @@ function resposta(interaction) {
       perms: [PermissionsBitField.Flags.Administrator],
     });
     await comandos.executar(setticket, { db, client: null });
-    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'destino_tickets'), 'cat-config');
+    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'categoria_tickets'), 'cat-config');
     assert.ok(resposta(setticket).embeds[0].toJSON().description.includes('TICKETS'));
-    passar('/boombot setticket: guarda categoria ou canal escolhido no banco');
+    passar('/boombot setticket: guarda a CATEGORIA dos tickets no banco');
 
-    // TICKET_CANAL_ID manda mais que categoria salva no banco
+    // CATEGORY_TICKETS_ID (env) vence a categoria salva no banco
     const { client: clientPrior, guild: guildPrior } = ambienteFalso();
-    const refPrior = await guildPrior.channels.create({ name: '📫・ticket' });
-    refPrior.position = 9;
-    const categoriaPrior = { id: 'cat-antiga', name: 'TICKETS', type: ChannelType.GuildCategory };
-    guildPrior.channels.cache.set(categoriaPrior.id, categoriaPrior);
+    const catEnv = { id: 'cat-env', name: 'TICKETS-ENV', type: ChannelType.GuildCategory };
+    const catBanco = { id: 'cat-antiga', name: 'TICKETS-BANCO', type: ChannelType.GuildCategory };
+    guildPrior.channels.cache.set(catEnv.id, catEnv);
+    guildPrior.channels.cache.set(catBanco.id, catBanco);
     guildPrior.channels.fetch = async (id) => guildPrior.channels.cache.get(id) ?? null;
-    require('../src/db').definirConfig(db, 'g1', 'destino_tickets', 'cat-antiga');
+    require('../src/db').definirConfig(db, 'g1', 'categoria_tickets', 'cat-antiga');
 
     const cfg3 = require('../src/config');
-    const canalRefAntes = cfg3.TICKET_CANAL_ID;
-    cfg3.TICKET_CANAL_ID = refPrior.id;
+    const antesEnv = cfg3.CATEGORY_TICKETS_ID;
+    cfg3.CATEGORY_TICKETS_ID = 'cat-env';
     const prioritario = await tickets.abrirTicket(
       { guild: guildPrior, guildId: 'g1', user: { id: 'j11', username: 'jogador11', tag: 'jogador11#1' } },
       { db, client: clientPrior, tipo: 'suporte' },
     );
-    cfg3.TICKET_CANAL_ID = canalRefAntes;
+    cfg3.CATEGORY_TICKETS_ID = antesEnv;
 
-    assert.strictEqual(prioritario.canal.parentId, null, 'ignora a categoria do banco');
-    assert.strictEqual(prioritario.canal.posicao, 10, 'nasce logo abaixo do TICKET_CANAL_ID');
-    passar('ticket: TICKET_CANAL_ID vence a categoria do banco e nasce logo abaixo');
+    assert.strictEqual(prioritario.canal.parentId, 'cat-env', 'env vence a categoria do banco');
+    passar('ticket: CATEGORY_TICKETS_ID (env) vence a categoria do banco');
   }
 
   // ---------- integração Nix FF ----------

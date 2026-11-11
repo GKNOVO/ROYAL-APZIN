@@ -66,7 +66,17 @@ function montar(client, db) {
         }
         return;
       }
-      if (interaction.isStringSelectMenu()) {
+      // Qualquer menu de seleção (texto, CARGO, CANAL, usuário…) vai para o
+      // mesmo tratador. Se só o de texto fosse tratado, os menus de cargo e de
+      // canal ficariam sem resposta e o Discord mostraria "não respondeu a tempo".
+      const ehMenu =
+        interaction.isStringSelectMenu?.() ||
+        interaction.isRoleSelectMenu?.() ||
+        interaction.isChannelSelectMenu?.() ||
+        interaction.isUserSelectMenu?.() ||
+        interaction.isMentionableSelectMenu?.() ||
+        interaction.isAnySelectMenu?.();
+      if (ehMenu) {
         await handleSelect(interaction, ctx);
         return;
       }

@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * /criar_telagem — abre a sala de call (telagem) da partida ativa.
- * Só mediador/ADM, e só dentro do canal da sala privada da partida.
+ * /criar_telagem — abre a sala de call (telagem) da partida.
+ * Só mediador/ADM. Funciona em QUALQUER canal: dentro da sala da partida o
+ * painel é vinculado a ela; fora, vale como telagem avulsa da staff.
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -26,25 +27,23 @@ const comandos = [
         return responderErro(interaction, 'Só mediadores/ADM podem criar a telagem.');
       }
 
-      const partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
-      if (!partida) {
-        return responderErro(
-          interaction,
-          'Use este comando **dentro do canal da partida** (a sala privada criada quando a fila fechou).',
-        );
-      }
-      if (!interaction.channel?.send) {
-        return responderErro(interaction, 'Não consegui enviar o painel neste canal.');
+      const canal = interaction.channel;
+      if (!canal?.send) {
+        return responderErro(interaction, 'Use esse comando em um canal de texto.');
       }
 
+      // Pode ser em qualquer canal: se for a sala de uma partida, vincula a ela.
+      const partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
       const codigo = telagem.novoCodigo();
-      await interaction.channel.send(telagem.painel(codigo));
+      await canal.send(telagem.painel(codigo));
 
       return responderPrivado(interaction, {
         embeds: [
           embedSucesso(
-            `Sala de telagem criada para a partida \`${partida.id}\`.\n` +
-              `**Código:** \`${codigo}\`\n**Link:** ${telagem.link(codigo)}`,
+            (partida
+              ? `Sala de telagem criada para a partida \`${partida.id}\`.`
+              : 'Sala de telagem criada neste canal.') +
+              `\n**Código:** \`${codigo}\`\n**Link:** ${telagem.link(codigo)}`,
           ),
         ],
       });

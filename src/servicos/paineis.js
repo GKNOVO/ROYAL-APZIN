@@ -10,8 +10,8 @@
  *
  * O comando `/filas…` publica as 15 mensagens no canal onde foi executado —
  * NÃO cria canal. Quem cria canal é o matchmaking: quando a fila fecha, a sala
- * privada da partida nasce logo ABAIXO do canal de referência (CANAL_FILA_ID no
- * .env ou `/boombot setfila`).
+ * privada da partida nasce DENTRO da categoria configurada (CATEGORIA_FILAS_ID
+ * no .env ou `/boombot setcategoria`).
  */
 
 const {
@@ -298,41 +298,6 @@ async function atualizar(client, db, { guildId, modo, preco = null }) {
   }
 }
 
-/** Canal de referência das filas (banco → .env). */
-async function canalDeReferencia(guild, db, chave = 'canal_fila', envId = config.CANAL_FILA_ID) {
-  const salvo = db ? obterConfig(db, guild.id, chave, envId) : envId;
-  const id = String(salvo || '').trim();
-  if (!id) return null;
-  const doCache = guild?.channels?.cache?.get?.(id);
-  if (doCache) return doCache;
-  if (typeof guild?.channels?.fetch !== 'function') return null;
-  return (await guild.channels.fetch(id).catch(() => null)) || null;
-}
-
-/**
- * Coloca o canal EXATAMENTE na posição logo abaixo do canal de referência
- * (referencia.position + 1), independente do que existe abaixo dele.
- */
-async function posicionarAbaixo(canal, referencia) {
-  if (!canal || !referencia || typeof canal.setPosition !== 'function') return false;
-
-  let base = Number(referencia.position);
-  if (!Number.isFinite(base)) {
-    // Canal veio sem position no cache: busca fresquinho no Discord.
-    const atual = await referencia.guild?.channels?.fetch?.(referencia.id, { force: true }).catch(() => null);
-    base = Number(atual?.position);
-  }
-  if (!Number.isFinite(base)) base = 0;
-
-  try {
-    await canal.setPosition(base + 1);
-    return true;
-  } catch (erro) {
-    console.warn(`[paineis] não consegui posicionar ${canal.name} abaixo de ${referencia.name}:`, erro.message);
-    return false;
-  }
-}
-
 /** "Gelo Normal" -> "gelo-normal" */
 function slug(texto) {
   return String(texto || '')
@@ -381,6 +346,4 @@ module.exports = {
   obter,
   todos,
   atualizar,
-  canalDeReferencia,
-  posicionarAbaixo,
 };

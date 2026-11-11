@@ -58,7 +58,6 @@ function componentes() {
       new ButtonBuilder().setCustomId('ap:plantaoentrar').setLabel('Entrar').setEmoji('✅').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('ap:plantaosair').setLabel('Sair').setEmoji('🚪').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ap:plantaostatus').setLabel('Atualizar').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('ap:plantaoconfig').setLabel('Config').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
     ),
   ];
 }

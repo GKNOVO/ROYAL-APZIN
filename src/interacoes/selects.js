@@ -1,6 +1,13 @@
 'use strict';
 
-/** Menu de valores: mostra o card com os botões da categoria só para quem escolheu. */
+/**
+ * Menus de seleção (texto, CARGO e CANAL).
+ *
+ * REGRA DE OURO: o Discord exige resposta em menos de 3 segundos. Por isso o
+ * primeiro passo é SEMPRE confirmar o clique (deferUpdate); só depois o bot
+ * grava no SQLite e redesenha o painel. Assim nenhum menu mostra
+ * "O aplicativo não respondeu a tempo".
+ */
 
 const config = require('../config');
 const filas = require('../servicos/filas');
@@ -9,41 +16,64 @@ const mediadores = require('../servicos/mediadores');
 const { responderPrivado, responderErro, ehAdmin } = require('../util/seguranca');
 const { embed, reais, listaUsuarios } = require('../util/embeds');
 
+const ACOES = ['preco', 'medcargos', 'medfila', 'medpix'];
+
+/** Confirma o clique na hora (vale para string, cargo, canal, usuário…). */
+async function confirmarClique(interaction) {
+  if (interaction.deferred || interaction.replied) return;
+  try {
+    await interaction.deferUpdate();
+  } catch (erro) {
+    console.error('[selects] não consegui confirmar o clique:', erro.message);
+  }
+}
+
+/** Redesenha o painel atual depois do deferUpdate. */
+async function redesenhar(interaction, payload) {
+  try {
+    await interaction.editReply(payload);
+    return true;
+  } catch (erro) {
+    console.error('[selects] não consegui redesenhar o painel:', erro.message);
+    return false;
+  }
+}
+
 async function handleSelect(interaction, ctx) {
   const partes = String(interaction.customId || '').split(':');
   if (partes[0] !== 'ap') return false;
 
-  // Menus do /mediadores: cargos, canal do plantão e canal do PIX.
-  if (['medcargos', 'medfila', 'medpix'].includes(partes[1])) {
-    try {
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    } catch (erro) {
-      console.error('[selects] não consegui confirmar o clique:', erro.message);
-    }
+  const acao = partes[1];
+  if (!ACOES.includes(acao)) return false;
 
+  // 1) Confirma o clique ANTES de qualquer acesso ao banco (evita o timeout).
+  await confirmarClique(interaction);
+
+  // 2) Menus do /mediadores: cargos, canal do plantão e canal do PIX.
+  if (acao.startsWith('med')) {
     if (!ehAdmin(interaction.member)) {
       await responderErro(interaction, 'Só ADM configura o módulo de mediadores.');
       return true;
     }
 
+    // Pode vir mais de um cargo (ex.: Mediador + Administrador juntos).
     const valores = (interaction.values || []).map(String).filter(Boolean);
-    if (partes[1] === 'medcargos') mediadores.definirCargos(ctx.db, interaction.guildId, valores);
-    if (partes[1] === 'medfila') mediadores.definirCanalBatePonto(ctx.db, interaction.guildId, valores[0]);
-    if (partes[1] === 'medpix') mediadores.definirCanalConfigPix(ctx.db, interaction.guildId, valores[0]);
+    try {
+      if (acao === 'medcargos') mediadores.definirCargos(ctx.db, interaction.guildId, valores);
+      if (acao === 'medfila') mediadores.definirCanalBatePonto(ctx.db, interaction.guildId, valores[0]);
+      if (acao === 'medpix') mediadores.definirCanalConfigPix(ctx.db, interaction.guildId, valores[0]);
+    } catch (erro) {
+      console.error(`[selects] não consegui salvar ${acao}:`, erro.message);
+      await responderErro(interaction, 'Não consegui salvar essa escolha. Tente de novo.').catch(() => {});
+      return true;
+    }
 
-    await interaction.editReply(mediadores.painelConfig(ctx.db, interaction.guildId));
+    // Painel novo, já com a escolha gravada.
+    await redesenhar(interaction, mediadores.painelConfig(ctx.db, interaction.guildId));
     return true;
   }
 
-  if (partes[1] !== 'preco') return false;
-
-  // Confirma o clique na hora: o Discord exige resposta em menos de 3 segundos.
-  try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-  } catch (erro) {
-    console.error('[selects] não consegui confirmar o clique:', erro.message);
-  }
-
+  // 3) Menu de preço do painel de fila.
   const modo = config.modoPorId(partes[2]);
   if (!modo) {
     await responderErro(interaction, 'Painel antigo. Peça para a staff publicar de novo.');
@@ -79,4 +109,4 @@ async function handleSelect(interaction, ctx) {
   return true;
 }
 
-module.exports = { handleSelect };
+module.exports = { handleSelect, confirmarClique };

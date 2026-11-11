@@ -40,7 +40,7 @@ const comandos = [
         '**Placar:** `/verp @jogador`',
         '**Jogador:** `/perfil` · `/verp` · `/ranking` · `/apostas` · `/convites` · `/ticket`',
         '**Staff:** `/painel_mediador` · `/registrar_pix` · `/pix` · `/vencedor` · `/wo` · `/receita_mediadores` · `/analista`',
-        '**Configuração:** `/boombot setticket` (canal de referência dos tickets) · `/boombot setfila` (canal acima das filas) · `/boombot setlog`',
+        '**Configuração:** `/boombot setticket` (categoria dos tickets) · `/boombot setcategoria` (categoria das filas) · `/boombot setlog`',
         '**Atendimento:** `/ticket` (painel temporário, 15s) · `/ticketfixo` (painel fixo, só ADM)',
         '**Nix FF (salas automáticas):** `/nix status` · `/nix criarsala` · `/nix iniciar` · `/nix statussala` · `/nix resultado`',
         '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot` · `/botperfil`',
@@ -153,8 +153,8 @@ const comandos = [
         embeds: [
           embedSucesso(
             `Central de Atendimento publicada e fixada em ${canal}.\n` +
-              '_Lembre: os tickets nascem logo abaixo do canal definido com `/boombot setticket`_ ' +
-              '_(ou `TICKET_CANAL_ID` no .env). O jogador só vê o aviso temporário dele._',
+              '_Lembre: os tickets nascem dentro da categoria definida com `/boombot setticket`_ ' +
+              '_(ou `CATEGORY_TICKETS_ID` no .env). O jogador só vê o aviso temporário dele._',
           ),
         ],
       });
@@ -187,25 +187,13 @@ const comandos = [
       .addSubcommand((sub) =>
         sub
           .setName('setticket')
-          .setDescription('Define o canal de referência dos tickets (nascem logo abaixo dele)')
+          .setDescription('Define a CATEGORIA onde os tickets são criados')
           .addChannelOption((o) =>
             o
               .setName('destino')
-              .setDescription('Canal de texto (ou categoria, no modo antigo)')
+              .setDescription('Categoria de atendimento')
               .setRequired(true)
-              .addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement),
-          ),
-      )
-      .addSubcommand((sub) =>
-        sub
-          .setName('setfila')
-          .setDescription('Define o canal de referência das filas (os canais nascem logo abaixo dele)')
-          .addChannelOption((o) =>
-            o
-              .setName('canal')
-              .setDescription('Canal que fica ACIMA das filas')
-              .setRequired(true)
-              .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
+              .addChannelTypes(ChannelType.GuildCategory),
           ),
       ),
 
@@ -250,29 +238,12 @@ const comandos = [
 
       if (sub === 'setticket') {
         const destino = interaction.options.getChannel('destino');
-        definirConfig(db, interaction.guildId, 'destino_tickets', destino.id);
-        const eCategoria = destino.type === ChannelType.GuildCategory;
+        definirConfig(db, interaction.guildId, 'categoria_tickets', destino.id);
         return responderPrivado(interaction, {
           embeds: [
             embedSucesso(
-              `Tickets configurados para **${destino.name}** (${eCategoria ? 'categoria' : 'canal de referência'}).\n` +
-                (eCategoria
-                  ? 'Os novos tickets são criados dentro dessa categoria (modo antigo).'
-                  : 'Os novos tickets nascem **logo abaixo** desse canal — e nenhuma mensagem é enviada no chat.'),
-            ),
-          ],
-        });
-      }
-
-      if (sub === 'setfila') {
-        const canal = interaction.options.getChannel('canal');
-        definirConfig(db, interaction.guildId, 'canal_fila', canal.id);
-        return responderPrivado(interaction, {
-          embeds: [
-            embedSucesso(
-              `Canal de referência das filas: **${canal.name}**.\n` +
-                'Agora cada `/filas…` cria (ou reaproveita) o canal da fila **logo abaixo** dele, ' +
-                `com ${config.PRECOS.length} mensagens — a mais barata por último.`,
+              `Tickets configurados para a categoria **${destino.name}**.\n` +
+                'Todo ticket novo nasce dentro dela — e nenhuma mensagem é enviada no chat.',
             ),
           ],
         });

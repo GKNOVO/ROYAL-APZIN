@@ -219,7 +219,11 @@ async function pagamentoRecebido(interaction, { db, client }, partidaId) {
       detalhe: `Sala ${partidaId}`,
     });
     return responderPrivado(interaction, {
-      embeds: [embedSucesso('Pagamento confirmado ✅\nAgora libere o ID e a senha da sala.')],
+      embeds: [
+        embedSucesso(
+          'Pagamento confirmado ✅\nAgora clique em **Criar sala (Nix)** — o ID e a senha vão direto para o canal da fila.',
+        ),
+      ],
     });
   } catch (erro) {
     return responderErro(interaction, erro.message);
@@ -406,15 +410,6 @@ async function handleBotao(interaction, ctx) {
 
       case 'plantaostatus': {
         await interaction.editReply(plantao.painel(db, interaction.guildId));
-        return true;
-      }
-
-      case 'plantaoconfig': {
-        if (!ehAdmin(interaction.member)) {
-          await responderErro(interaction, 'Só ADM pode abrir a configuração da mediação.');
-          return true;
-        }
-        await responderPrivado(interaction, mediadores.painelConfig(db, interaction.guildId));
         return true;
       }
 

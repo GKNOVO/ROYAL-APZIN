@@ -142,24 +142,20 @@ const config = {
   GUILD_ID: texto(process.env.GUILD_ID),
   CAMINHO_BANCO: path.resolve(texto(process.env.DATABASE_PATH, 'database/royal.db')),
 
-  CATEGORIA_FILAS_ID: texto(process.env.CATEGORIA_FILAS_ID),
   /**
-   * CANAL DE REFERÊNCIA das filas: o canal de cada fila nasce logo ABAIXO
-   * deste canal (nada de categoria). Também dá para definir com
-   * `/boombot setfila canal:#canal`.
+   * CATEGORIA onde nascem as salas privadas de partida (quando a fila fecha,
+   * o canal é criado DENTRO dela). Dá para definir com `/boombot setcategoria`.
    */
-  CANAL_FILA_ID: texto(process.env.CANAL_FILA_ID),
+  CATEGORIA_FILAS_ID: texto(process.env.CATEGORIA_FILAS_ID) || texto(process.env.CATEGORY_FILAS_ID),
 
   /**
-   * ONDE OS TICKETS NASCEM — aceita ID de CATEGORIA ou de CANAL DE TEXTO.
+   * ONDE OS TICKETS NASCEM — sempre uma CATEGORIA.
    * A ordem de prioridade está em src/servicos/tickets.js.
    */
-  TICKET_DESTINO_ID: texto(process.env.TICKET_DESTINO_ID),
-  TICKET_CATEGORIA_ID: texto(process.env.TICKET_CATEGORIA_ID),
-  /** Canal de referência dos tickets: o ticket nasce logo ABAIXO dele. */
-  TICKET_CANAL_ID: texto(process.env.TICKET_CANAL_ID),
-  /** Categoria (ou canal) onde os tickets são criados — nome oficial. */
   CATEGORY_TICKETS_ID: texto(process.env.CATEGORY_TICKETS_ID),
+  TICKET_CATEGORIA_ID: texto(process.env.TICKET_CATEGORIA_ID),
+  /** Nome alternativo da mesma configuração (compatibilidade). */
+  TICKET_DESTINO_ID: texto(process.env.TICKET_DESTINO_ID),
   /** Nome antigo da mesma variável — continua aceito para não quebrar .env já existente. */
   CATEGORIA_SUPORTE_ID: texto(process.env.CATEGORIA_SUPORTE_ID) || texto(process.env.CATEGORY_TICKETS_ID),
 

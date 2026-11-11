@@ -248,12 +248,10 @@ async function resolverCategoria(guild, db, chave, envId) {
 }
 
 async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogadores }) {
-  // Canal de referência (CANAL_FILA_ID / `/boombot setfila`): a sala nasce FORA
-  // de categoria, logo ABAIXO dele. A categoria antiga é só fallback.
-  const referencia = await paineis.canalDeReferencia(guild, db);
-  const categoria = referencia
-    ? null
-    : await resolverCategoria(guild, db, 'categoria_filas', config.CATEGORIA_FILAS_ID);
+  // A sala privada nasce DENTRO da categoria configurada (CATEGORIA_FILAS_ID ou
+  // `/boombot setcategoria`). Sem categoria configurada o bot tenta achar uma
+  // categoria de filas pelo nome antes de criar na raiz do servidor.
+  const categoria = await resolverCategoria(guild, db, 'categoria_filas', config.CATEGORIA_FILAS_ID);
   const A = PermissionFlagsBits;
   const permissoes = [
     { id: guild.roles.everyone.id, deny: [A.ViewChannel] },
@@ -285,7 +283,6 @@ async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogador
     permissionOverwrites: permissoes,
   });
 
-  if (referencia) await paineis.posicionarAbaixo(canal, referencia);
   return canal;
 }
 

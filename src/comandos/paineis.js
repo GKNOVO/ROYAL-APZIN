@@ -8,8 +8,8 @@
  * comando.
  *
  * Quem cria canal é o matchmaking: quando dois jogadores fecham a mesma faixa,
- * o bot abre a sala privada da partida logo ABAIXO do canal de referência
- * (CANAL_FILA_ID no .env ou `/boombot setfila`).
+ * o bot abre a sala privada da partida DENTRO da categoria configurada
+ * (CATEGORIA_FILAS_ID no .env ou `/boombot setcategoria`).
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -58,7 +58,7 @@ const comandos = config.MODOS.map((modo) => ({
         embedSucesso(
           `✅ Fila **${modo.titulo}** publicada aqui em <#${canal.id}> com **${enviadas.length} mensagens** ` +
             '(menor valor por último, embaixo).' +
-            '\n_Quando dois jogadores fecharem a mesma faixa, a sala privada nasce logo abaixo do canal de referência._',
+            '\n_Quando dois jogadores fecharem a mesma faixa, a sala privada nasce dentro da categoria das filas._',
         ),
       ],
     });

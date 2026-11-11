@@ -4,22 +4,15 @@
  * Central de Atendimento: painel com 5 setores, criação de canal privado e
  * boas-vindas personalizadas. Usado por /ticket, /ticketfixo e pelos botões.
  *
- * ONDE O TICKET NASCE (flexível de propósito — não trava se você errar o tipo):
- * a variável de destino aceita ID de CANAL DE TEXTO (recomendado) **ou** de
- * CATEGORIA (compatibilidade).
- *
- *   ID de canal     → o canal do ticket é criado FORA de categoria, posicionado
- *                     logo ABAIXO desse canal de referência. Nada é enviado no
- *                     chat: o jogador só vê a resposta efêmera dele.
- *   ID de categoria → (compatibilidade) o canal do ticket é criado dentro dela.
+ * ONDE O TICKET NASCE: sempre DENTRO de uma CATEGORIA.
  *
  * Ordem de busca (a primeira que existir vence):
- *   TICKET_CANAL_ID → canal_ticket/destino_tickets (banco) → TICKET_DESTINO_ID →
  *   CATEGORY_TICKETS_ID → TICKET_CATEGORIA_ID → categoria_tickets (banco) →
- *   CATEGORIA_SUPORTE_ID → categoria_suporte (banco).
+ *   TICKET_DESTINO_ID → destino_tickets (banco) → CATEGORIA_SUPORTE_ID →
+ *   categoria_suporte (banco).
  *
- * Sem nada configurado o ticket nasce na raiz do servidor (sem categoria) —
- * nunca em categoria "aleatória".
+ * Se a variável receber um CANAL (modo antigo), o bot usa a categoria onde ele
+ * está — assim nenhum ticket nasce na raiz nem em categoria "aleatória".
  */
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
@@ -172,14 +165,12 @@ async function buscarCanal(guild, id) {
 function candidatosTickets(guild, db) {
   const doBanco = (chave) => (db ? obterConfig(db, guild.id, chave, null) : null);
   return [
-    // O canal de referência do .env MANDA: o ticket nasce sempre abaixo dele.
-    config.TICKET_CANAL_ID,
-    doBanco('canal_ticket'),
-    doBanco('destino_tickets'),
-    config.TICKET_DESTINO_ID,
+    // A CATEGORIA do .env MANDA: todo ticket novo nasce dentro dela.
     config.CATEGORY_TICKETS_ID,
     config.TICKET_CATEGORIA_ID,
     doBanco('categoria_tickets'),
+    config.TICKET_DESTINO_ID,
+    doBanco('destino_tickets'),
     config.CATEGORIA_SUPORTE_ID,
     doBanco('categoria_suporte'),
   ]
@@ -188,40 +179,35 @@ function candidatosTickets(guild, db) {
 }
 
 /**
- * Descobre onde criar os tickets.
- * Devolve { categoria, canal, origem }:
- *   • canal     → CANAL DE REFERÊNCIA: o ticket nasce logo ABAIXO dele
- *   • categoria → (compatibilidade) o ticket nasce dentro da categoria
+ * Descobre a CATEGORIA onde criar os tickets.
+ * Devolve { categoria, origem }; categoria null = raiz do servidor.
  */
 async function resolverDestinoTickets(guild, db) {
   for (const id of candidatosTickets(guild, db)) {
     const canal = await buscarCanal(guild, id);
 
     if (!canal) {
-      console.warn(
-        `[tickets] não achei o ID "${id}" neste servidor. Confira TICKET_DESTINO_ID/CATEGORY_TICKETS_ID no .env.`,
-      );
+      console.warn(`[tickets] não achei o ID "${id}" neste servidor. Confira CATEGORY_TICKETS_ID no .env.`);
       continue;
     }
 
     if (canal.type === ChannelType.GuildCategory) {
-      return { categoria: canal, canal: null, origem: id };
+      return { categoria: canal, origem: id };
     }
 
-    if (ehCanalDeTexto(canal)) {
-      // Canal de referência: o ticket nasce fora de categoria, logo abaixo dele.
-      return { categoria: null, canal, origem: id };
+    // Compatibilidade: veio um canal — usa a categoria onde ele está.
+    if (ehCanalDeTexto(canal) && canal.parentId) {
+      const pai = await buscarCanal(guild, canal.parentId);
+      if (pai?.type === ChannelType.GuildCategory) return { categoria: pai, origem: id };
     }
 
     console.warn(
-      `[tickets] o ID "${id}" é um ${ChannelType[canal.type] || 'tipo de canal'} inválido. ` +
-        'Use o ID de uma CATEGORIA ou de um CANAL DE TEXTO.',
+      `[tickets] o ID "${id}" não é uma categoria (${ChannelType[canal.type] || 'tipo desconhecido'}). ` +
+        'Use o ID da CATEGORIA de atendimento.',
     );
   }
 
-  // Sem ID configurado o ticket não vai para categoria nenhuma: nasce na raiz
-  // (o aviso abaixo pede para configurar TICKET_CANAL_ID).
-  return { categoria: null, canal: null, origem: null };
+  return { categoria: null, origem: null };
 }
 
 /** Compatibilidade: quem só quer a categoria continua funcionando. */
@@ -260,29 +246,6 @@ function linhaFechar() {
 }
 
 /**
- * Posiciona o canal do ticket logo ABAIXO do canal de referência.
- * Sem categoria e sem parentId: só a ordem no servidor muda.
- */
-async function posicionarAbaixo(canal, referencia) {
-  if (!canal || !referencia || typeof canal.setPosition !== 'function') return false;
-
-  let base = Number(referencia.position);
-  if (!Number.isFinite(base)) {
-    const atual = await referencia.guild?.channels?.fetch?.(referencia.id, { force: true }).catch(() => null);
-    base = Number(atual?.position);
-  }
-  if (!Number.isFinite(base)) base = 0;
-
-  try {
-    await canal.setPosition(base + 1);
-    return true;
-  } catch (erro) {
-    console.warn(`[tickets] não consegui posicionar o ticket abaixo de ${referencia.name}:`, erro.message);
-    return false;
-  }
-}
-
-/**
  * Abre (ou reaproveita) o canal do ticket.
  * Devolve { canal, categoria, canalDestino, tipo, existente, link }.
  */
@@ -305,51 +268,32 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
     return {
       canal: existente,
       categoria,
-      canalDestino: destino.canal,
       tipo: info.id,
       existente: true,
       link: `<#${existente.id}>`,
     };
   }
 
-  const referencia = destino.canal;
   const canal = await guild.channels.create({
     name: nome,
     type: ChannelType.GuildText,
-    // Com canal de referência o ticket nasce fora de categoria (raiz do servidor).
-    ...(categoria && !referencia ? { parent: categoria.id } : {}),
+    // O ticket nasce DENTRO da categoria configurada.
+    ...(categoria ? { parent: categoria.id } : {}),
     topic: `Ticket ${info.nome} de ${usuario.tag || usuario.username} · ORG Royal AP`,
     permissionOverwrites: permissoesDoTicket(guild, client, usuario.id),
   });
 
-  if (referencia) {
-    // Nasce logo ABAIXO do canal de referência (os de baixo descem uma posição).
-    await posicionarAbaixo(canal, referencia);
-  } else if (categoria) {
-    // Compatibilidade: mantém o ticket no fim da categoria.
-    try {
-      const irmaos = guild.channels.cache.filter(
-        (outro) =>
-          outro.id !== canal.id && outro.parentId === categoria.id && outro.type === ChannelType.GuildText,
-      );
-      if (typeof canal.setPosition === 'function') await canal.setPosition(irmaos.size);
-    } catch (erro) {
-      console.warn('[tickets] não consegui posicionar o canal:', erro.message);
-    }
-  } else {
+  if (!categoria) {
     console.warn(
-      '[tickets] nenhum canal/categoria de atendimento encontrado. Configure TICKET_CANAL_ID (canal de referência) no .env ou use /boombot setticket.',
+      '[tickets] nenhuma categoria de atendimento configurada: o ticket foi criado na raiz. ' +
+        'Defina CATEGORY_TICKETS_ID no .env ou use /boombot setticket.',
     );
   }
 
   // Só o atendimento (Suporte/Auxiliar) é marcado no ticket.
   const cargos = mediadores.cargosSuporte();
   const chamada = [mencao(usuario.id), ...cargos.map((id) => mencaoCargo(id))].join(' ');
-  const ondeNasceu = categoria
-    ? ` em **${categoria.name}**`
-    : referencia
-      ? ` logo abaixo de <#${referencia.id}>`
-      : '';
+  const ondeNasceu = categoria ? ` em **${categoria.name}**` : '';
 
   await canal.send({
     content: `${chamada}\n**Ticket de ${info.nome}** aberto${ondeNasceu}. A staff já foi chamada — explique o caso aqui.`,
@@ -368,17 +312,13 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
       guildId: guild.id,
       autorId: usuario.id,
       acao: 'Ticket aberto',
-      detalhe:
-        `${canal.name} · ${info.nome}` +
-        `${categoria ? ` · ${categoria.name}` : ''}` +
-        `${referencia ? ` · abaixo de #${referencia.name}` : ''}`,
+      detalhe: `${canal.name} · ${info.nome}${categoria ? ` · ${categoria.name}` : ''}`,
     })
     .catch(() => {});
 
   return {
     canal,
     categoria,
-    canalDestino: destino.canal,
     tipo: info.id,
     existente: false,
     link: `<#${canal.id}>`,

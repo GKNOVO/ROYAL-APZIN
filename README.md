@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 51 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 55 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -67,7 +67,7 @@ serviço não entra mais em timeout.
    - **Start Command:** `npm start`
    - **Instance Type:** `Free`
 4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
-   `CANAL_FILA_ID`, `TICKET_CANAL_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
+   `CATEGORIA_FILAS_ID`, `CATEGORY_TICKETS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
    `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
    Não precisa criar `PORT`: o Render injeta essa variável sozinho.
 5. **Create Web Service**. Nos logs deve aparecer:
@@ -75,7 +75,7 @@ serviço não entra mais em timeout.
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 51 comandos registrados
+✅ 55 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -142,12 +142,10 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `GUILD_ID` | não | ID do seu servidor. **Preencha para os comandos aparecerem na hora** (vazio = global, até 1h) | `987654321098765432` |
 | `DATABASE_PATH` | não | Onde fica o banco | `database/royal.db` |
 | `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
-| `CANAL_FILA_ID` | recomendado | **Canal de referência das filas**: o canal de cada fila nasce logo **abaixo** dele (também dá para definir com `/boombot setfila`) | `111222333444555666` |
-| `TICKET_CANAL_ID` | recomendado | **Canal de referência dos tickets**: o ticket nasce logo **abaixo** dele, sem mensagem no chat (também dá para definir com `/boombot setticket`) | `111222333444555777` |
-| `CATEGORIA_FILAS_ID` | opcional | Fallback antigo de categoria para as salas de AP (o normal é nascer logo abaixo do canal de referência) | `111222333444555666` |
-| `TICKET_DESTINO_ID` | opcional | Alternativa ao `TICKET_CANAL_ID` (aceita canal de texto ou, no modo antigo, categoria) | `111222333444555777` |
-| `CATEGORY_TICKETS_ID` | opcional | Nome antigo/alternativo do mesmo destino | `111222333444555777` |
-| `TICKET_CATEGORIA_ID` | opcional | Categoria dos tickets (modo antigo, sem posicionamento por canal) | `111222333444555888` |
+| `CATEGORIA_FILAS_ID` | recomendado | **Categoria das salas de partida**: quando a fila fecha, a sala privada nasce **dentro dela** (também dá para definir com `/boombot setcategoria`) | `111222333444555666` |
+| `CATEGORY_TICKETS_ID` | recomendado | **Categoria dos tickets**: todo ticket novo nasce **dentro dela**, sem mensagem no chat (também dá para definir com `/boombot setticket`) | `111222333444555777` |
+| `TICKET_CATEGORIA_ID` | opcional | Nome alternativo da categoria dos tickets | `111222333444555888` |
+| `TICKET_DESTINO_ID` | opcional | Compatibilidade: se receber um canal, o bot usa a categoria onde ele está | `111222333444555777` |
 | `NIX_API_URL` | opcional | Endereço da API de salas da Nix | `https://salas.nixbot.vip` |
 | `NIX_API_KEY` | opcional | Chave da API gerada em nixff.vip (sem ela só o `/nix` fica limitado) | `nix_sk_...` |
 | `CARGO_ADMIN_ID` | recomendado | Quem manda em tudo | ID do cargo ADM |
@@ -164,12 +162,15 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 **Como pegar um ID:** no Discord, Configurações → Avançado → **Modo desenvolvedor** ligado. Depois
 clique com o botão direito no cargo/canal/categoria → **Copiar ID**.
 
-### 3.1 Filas posicionadas abaixo de um canal
+### 3.1 Filas no canal atual e salas dentro da categoria
 
-Nada de canal novo: defina o **canal de referência** (`CANAL_FILA_ID` no `.env` ou
-`/boombot setfila canal:#seu-canal`). Quando a staff roda `/filasx1mobile`, `/filasx4emu` etc.,
-o bot publica as **15 mensagens** (uma por faixa de aposta) **no próprio canal onde o comando foi
-executado** — o comando não cria canal nenhum:
+Nada de canal novo para as filas: quando a staff roda `/filasx1mobile`, `/filasx4emu` etc., o bot
+publica as **15 mensagens** (uma por faixa de aposta) **no próprio canal onde o comando foi
+executado** — o comando não cria canal nenhum.
+
+Já a **sala privada da partida** (criada quando dois jogadores fecham a mesma faixa) nasce
+**dentro da categoria** configurada em `CATEGORIA_FILAS_ID` (ou `/boombot setcategoria`). Sem
+categoria configurada, o bot procura uma categoria de filas pelo nome antes de criar na raiz:
 
 ```
 💵 R$ 100,00   ← primeira mensagem (topo)
@@ -186,13 +187,11 @@ ou sai daquela faixa.
 O botão **❌ Sair da fila** é dinâmico: ele não fica no card público (que é igual para todos),
 aparece só na resposta efêmera de quem está naquela faixa — ninguém mais vê o botão.
 
-### 3.2 Tickets: canal de referência e aviso temporário
+### 3.2 Tickets: categoria e aviso temporário
 
-Com `TICKET_CANAL_ID` (ou `/boombot setticket destino:#seu-canal`), o canal do ticket nasce **fora
-de categoria**, posicionado **logo abaixo** do canal de referência (`referencia.position + 1`). Esse
-ID tem prioridade sobre qualquer categoria — sem ele, o ticket nasce na raiz, nunca em categoria
-alatória. Ao clicar em um botão da
-Central de Atendimento, **nada é publicado no chat**: o jogador recebe apenas uma resposta
+Com `CATEGORY_TICKETS_ID` (ou `/boombot setticket destino:#sua-categoria`), o canal do ticket nasce
+**dentro da categoria de atendimento** — nada de canal solto na raiz do servidor. Ao clicar em um
+botão da Central de Atendimento, **nada é publicado no chat**: o jogador recebe apenas uma resposta
 efêmera (só ele vê) com o link do ticket e o botão **Ignorar mensagem**, que apaga esse aviso da
 tela dele.
 
@@ -241,8 +240,8 @@ Mencionar Everyone · Anexar Arquivos.
 
 1. **Jogador** escolhe a faixa no menu do painel (R$ 0,50 até R$ 100,00) e o tipo de gelo.
 2. Quando o grupo fecha (2 jogadores no 1x1, 8 no 4x4…), o bot limpa a fila do painel e **cria a
-   sala privada** (`#fila-gelo-normal-001`, `#fila-gelo-normal-002`…) **logo abaixo do canal de
-   referência**, só com os jogadores + mediadores/ADM.
+   sala privada** (`#fila-gelo-normal-001`, `#fila-gelo-normal-002`…) **dentro da categoria de
+   filas**, só com os jogadores + mediadores/ADM.
 3. A sala nasce com o card **⏳ Aguardando · 1v1 Mobile Gelo Normal** — aposta, premiação e os
    jogadores numerados — e os botões **Confirmar Partida** e **Cancelar**.
 4. Cada confirmação aparece no chat da sala: *“✅ @Jogador1 confirmou a partida. Agora falta apenas
