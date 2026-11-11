@@ -45,7 +45,7 @@ function embedSalaLiberada(partida, dados, lista) {
     [
       `**ID da sala:** \`${dados?.room_id ?? '—'}\``,
       `**Senha:** \`${dados?.password ?? '—'}\``,
-      `**Aposta:** ${reais(partida.preco)} por jogador · **Jogadores:** ${lista.length}`,
+      `**Aposta:** ${reais(partida.preco)} por capitão (1 por time) · **Capitães:** ${lista.length}`,
       '',
       `➜ Entrem no Free Fire agora: a partida começa em ~${tempo} min.`,
       '➜ Qualquer problema, chamem o mediador aqui mesmo no canal.',

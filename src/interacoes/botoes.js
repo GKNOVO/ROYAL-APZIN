@@ -87,15 +87,11 @@ async function entrarNaFilaBotao(interaction, { db, client }, modoId, preco, gel
             `**Posição:** ${resultado.posicao}\n**Faltam:** ${resultado.faltam} jogador(es) para fechar.`,
         ),
       ],
-      // Só quem está nesta faixa recebe o "Sair" — ninguém mais vê este botão.
-      components: [paineis.linhaSair(modo, Number(preco))],
+      // O "Sair da fila" fica no card da própria faixa, ao lado de "Como funciona".
     });
   } catch (erro) {
     if (/já está nessa fila/i.test(String(erro.message))) {
-      return responderPrivado(interaction, {
-        embeds: [embedErro(erro.message)],
-        components: [paineis.linhaSair(modo, Number(preco))],
-      });
+      return responderPrivado(interaction, { embeds: [embedErro(erro.message)] });
     }
     return responderErro(interaction, erro.message);
   }

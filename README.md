@@ -192,8 +192,9 @@ ou sai daquela faixa.
 > privado nasce no segundo capitão. O 3x3 não espera 6 pessoas e o 4x4 não espera 8: cada capitão
 > recebe o ID/senha na sala privada e leva o time dele para a sala personalizada do Free Fire.
 
-O botão **❌ Sair da fila** é dinâmico: ele não fica no card público (que é igual para todos),
-aparece só na resposta efêmera de quem está naquela faixa — ninguém mais vê o botão.
+O botão **❌ Sair da fila** aparece na própria linha do card da faixa em que há jogador, **ao lado
+de "Como funciona"**; nas outras faixas ele não aparece. Quando a última pessoa sai daquela faixa,
+o botão some do card.
 
 ### 3.2 Tickets: categoria e aviso temporário
 

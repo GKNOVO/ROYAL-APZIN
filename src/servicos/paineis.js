@@ -98,9 +98,9 @@ function componentesPainel(modo) {
 
 /**
  * Botões do card, conforme a categoria do canal:
- *  mobile   → Gelo Infinito · Gelo Normal · Sair · Como funciona
- *  emu      → Normal · Full UMP e XM8 · Sair · Como funciona
- *  fullcapa → Full Capa · Sair · Como funciona
+ *  mobile   → Gelo Infinito · Gelo Normal · Como funciona · Sair
+ *  emu      → Normal · Full UMP e XM8 · Como funciona · Sair
+ *  fullcapa → Full Capa · Como funciona · Sair
  *  misto    → 1 Emu (2 Emu, 3 Emu conforme o time) · Sair  (sem "Como funciona")
  */
 function componentesEntrada(modo, preco, opcoes = {}) {
@@ -113,10 +113,6 @@ function componentesEntrada(modo, preco, opcoes = {}) {
       .setStyle(estilos[indice] || ButtonStyle.Secondary),
   );
 
-  // O card é uma mensagem pública (igual para todos), então o "Sair" só entra
-  // na resposta EFÊMERA de quem está naquela fila (opcoes.sair = true).
-  if (opcoes.sair) botoes.push(botaoSair(modo, preco));
-
   if (config.mostrarComoFunciona(modo)) {
     botoes.push(
       new ButtonBuilder()
@@ -127,10 +123,14 @@ function componentesEntrada(modo, preco, opcoes = {}) {
     );
   }
 
+  // "Sair da fila" entra na MESMA linha do card, ao lado de "Como funciona",
+  // e só na faixa que tem jogador. Quando a faixa esvazia, o botão some.
+  if (opcoes.sair) botoes.push(botaoSair(modo, preco));
+
   return [new ActionRowBuilder().addComponents(...botoes)];
 }
 
-/** Botão "Sair" de uma faixa (só aparece para quem está naquela fila). */
+/** Botão "Sair" de uma faixa (o card mostra só quando a faixa tem jogador). */
 function botaoSair(modo, preco) {
   return new ButtonBuilder()
     .setCustomId(`ap:sair:${modo.id}:${preco}`)
@@ -171,7 +171,7 @@ function mensagemPreco(modo, preco, entradas = []) {
         ],
       }),
     ],
-    components: componentesEntrada(modo, preco),
+    components: componentesEntrada(modo, preco, { sair: jogadores.length > 0 }),
   };
 }
 

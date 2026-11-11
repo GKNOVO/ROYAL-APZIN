@@ -127,7 +127,7 @@ async function handleSelect(interaction, ctx) {
 
   const descricao = [
     `**Modo:** ${modo.titulo}`,
-    `**Aposta:** ${reais(preco)} por jogador`,
+    `**Aposta:** ${reais(preco)} por capitão (1 por time)`,
     `**Abre com:** ${config.CAPITAES_POR_PARTIDA} capitães (1 por time) · formato ${modo.time}x${modo.time}`,
     '',
     ...linhas,

@@ -357,7 +357,7 @@ async function anunciarPix(client, db, { partidaId, mediadorId, chave, titular }
     `💸 **PIX do mediador** — ${mencao(mediadorId)}`,
     `**Chave:** \`${chave}\``,
     titular ? `**Titular:** ${titular}` : null,
-    `**Valor por jogador:** ${reais(partida.preco)}`,
+    `**Valor por capitão (1 por time):** ${reais(partida.preco)}`,
     '',
     'Enviem o comprovante **nesta sala**. O mediador libera a sala depois de conferir.',
   ]

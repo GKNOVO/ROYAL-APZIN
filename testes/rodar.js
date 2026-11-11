@@ -547,18 +547,31 @@ function resposta(interaction) {
       ['ap:entrar:x1mobile:250:infinito', 'ap:entrar:x1mobile:250:normal', 'ap:como'],
     );
     assert.deepStrictEqual(mobile.map((botao) => botao.label), ['Gelo Infinito', 'Gelo Normal', 'Como funciona']);
-    passar('cards mobile: Gelo Infinito · Gelo Normal (sem "Sair" no card público)');
+    passar('cards mobile: Gelo Infinito · Gelo Normal (sem "Sair" quando a faixa está vazia)');
 
-    // "Sair" é dinâmico: só aparece para quem está naquela faixa (efêmero)
+    // "Sair" entra na MESMA linha do card, ao lado de "Como funciona", e só
+    // quando a faixa tem jogador. Quando esvazia, o botão some.
     const comSair = paineis.componentesEntrada(modo, 250, { sair: true })[0].toJSON().components;
     assert.deepStrictEqual(comSair.map((botao) => botao.custom_id), [
       'ap:entrar:x1mobile:250:infinito',
       'ap:entrar:x1mobile:250:normal',
-      'ap:sair:x1mobile:250',
       'ap:como',
+      'ap:sair:x1mobile:250',
     ]);
-    assert.strictEqual(paineis.linhaSair(modo, 250).toJSON().components[0].custom_id, 'ap:sair:x1mobile:250');
-    passar('cards: botão "Sair" só aparece para quem está na fila daquela faixa');
+    assert.deepStrictEqual(comSair.map((botao) => botao.label), [
+      'Gelo Infinito',
+      'Gelo Normal',
+      'Como funciona',
+      'Sair da fila',
+    ]);
+
+    const cardSemNinguem = paineis.mensagemPreco(modo, 250, []);
+    const cardComCapitao = paineis.mensagemPreco(modo, 250, [{ user_id: 'u1', gelo: 'normal', preco: 250 }]);
+    const idsVazio = cardSemNinguem.components[0].toJSON().components.map((botao) => botao.custom_id);
+    const idsCheio = cardComCapitao.components[0].toJSON().components.map((botao) => botao.custom_id);
+    assert.ok(!idsVazio.includes('ap:sair:x1mobile:250'), 'faixa vazia não mostra Sair');
+    assert.ok(idsCheio.includes('ap:sair:x1mobile:250'), 'faixa com jogador mostra Sair');
+    passar('cards: "Sair" ao lado de "Como funciona", só na faixa que tem jogador');
 
     const emu = paineis.componentesEntrada(config.modoPorId('x2emu'), 500)[0].toJSON().components;
     assert.deepStrictEqual(emu.map((botao) => botao.label), ['Normal', 'Full UMP e XM8', 'Como funciona']);
@@ -712,6 +725,43 @@ function resposta(interaction) {
     );
     passar(`matchmaking: ${testadas} entradas (15 filas, todas as variantes) abrem com 2 capitães`);
     dbCap.close();
+  }
+
+  // ---------- contador "Faltam" e Sair no card (2x2, 4x4 e full capa) ----------
+  {
+    const { client, guild } = ambienteFalso();
+    const dbCnt = abrirBanco(path.join(pasta, 'contador.db'));
+    const { handleBotao } = require('../src/interacoes/botoes');
+
+    for (const [modoId, preco] of [['x2mobile', 50], ['x4mobile', 50], ['x2fullcapa', 100]]) {
+      const modo = config.modoPorId(modoId);
+      const gelo = config.variantesDoModo(modo)[0].id;
+
+      const primeiro = fakeInteraction({ userId: `${modoId}-c1`, guildId: guild.id });
+      primeiro.guild = guild;
+      primeiro.customId = `ap:entrar:${modoId}:${preco}:${gelo}`;
+      primeiro.isButton = () => true;
+      await handleBotao(primeiro, { db: dbCnt, client });
+
+      const resposta1 = resposta(primeiro);
+      const texto1 = resposta1.embeds[0].toJSON().description;
+      assert.ok(
+        texto1.includes('**Faltam:** 1 jogador(es) para fechar.'),
+        `${modoId}: o 1º jogador precisa ver que falta 1, veio: ${texto1}`,
+      );
+      assert.ok(!resposta1.components?.length, `${modoId}: Sair não fica mais na resposta efêmera`);
+
+      const segundo = fakeInteraction({ userId: `${modoId}-c2`, guildId: guild.id });
+      segundo.guild = guild;
+      segundo.customId = `ap:entrar:${modoId}:${preco}:${gelo}`;
+      segundo.isButton = () => true;
+      await handleBotao(segundo, { db: dbCnt, client });
+
+      const texto2 = resposta(segundo).embeds[0].toJSON().description;
+      assert.ok(/Grupo fechado|sala privada/i.test(texto2), `${modoId}: o 2º jogador fecha a sala, veio: ${texto2}`);
+    }
+    passar('contador: 2x2, 4x4 e full capa mostram "Faltam: 1" e fecham no 2º jogador');
+    dbCnt.close();
   }
 
   // ---------- mediação: configuração, plantão, PIX, telagem e /verp ----------
