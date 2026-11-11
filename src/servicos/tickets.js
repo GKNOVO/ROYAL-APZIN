@@ -5,12 +5,13 @@
  * boas-vindas personalizadas. Usado por /ticket, /ticketfixo e pelos botões.
  *
  * ONDE O TICKET NASCE (flexível de propósito — não trava se você errar o tipo):
- * a variável de destino aceita ID de CATEGORIA **ou** de CANAL DE TEXTO.
+ * a variável de destino aceita ID de CANAL DE TEXTO (recomendado) **ou** de
+ * CATEGORIA (compatibilidade).
  *
- *   ID de categoria → o canal do ticket é criado dentro dela.
- *   ID de canal     → o canal do ticket é criado na MESMA categoria desse
- *                     canal (ou na raiz do servidor, se ele não tiver
- *                     categoria) e o bot avisa no canal com o link do ticket.
+ *   ID de canal     → o canal do ticket é criado FORA de categoria, posicionado
+ *                     logo ABAIXO desse canal de referência. Nada é enviado no
+ *                     chat: o jogador só vê a resposta efêmera dele.
+ *   ID de categoria → (compatibilidade) o canal do ticket é criado dentro dela.
  *
  * Ordem de busca (a primeira que existir vence):
  *   /boombot setticket (banco) → TICKET_DESTINO_ID → CATEGORY_TICKETS_ID →
@@ -186,8 +187,8 @@ function candidatosTickets(guild, db) {
 /**
  * Descobre onde criar os tickets.
  * Devolve { categoria, canal, origem }:
- *   • categoria → canal de texto configurado (a categoria do ticket)
- *   • canal     → canal de texto configurado (recebe o aviso com o link)
+ *   • canal     → CANAL DE REFERÊNCIA: o ticket nasce logo ABAIXO dele
+ *   • categoria → (compatibilidade) o ticket nasce dentro da categoria
  */
 async function resolverDestinoTickets(guild, db) {
   for (const id of candidatosTickets(guild, db)) {
@@ -205,9 +206,8 @@ async function resolverDestinoTickets(guild, db) {
     }
 
     if (ehCanalDeTexto(canal)) {
-      const pai = canal.parentId ? await buscarCanal(guild, canal.parentId) : null;
-      const categoria = pai && pai.type === ChannelType.GuildCategory ? pai : null;
-      return { categoria, canal, origem: id };
+      // Canal de referência: o ticket nasce fora de categoria, logo abaixo dele.
+      return { categoria: null, canal, origem: id };
     }
 
     console.warn(
@@ -258,19 +258,19 @@ function linhaFechar() {
   );
 }
 
-/** Avisa no canal de atendimento (quando o destino configurado é um canal). */
-async function avisarNoCanal(canal, { usuario, info, ticket, categoria }) {
-  if (!canal || !config.TICKET_AVISO_CANAL) return;
-  if (canal.id === ticket.id) return;
-
-  const onde = categoria ? ` em **${categoria.name}**` : '';
-  await canal
-    .send({
-      content:
-        `🎫 Novo ticket de **${usuario.username || usuario.id}** (${info.emoji} ${info.nome})${onde}: <#${ticket.id}>`,
-      allowedMentions: { parse: [] },
-    })
-    .catch((erro) => console.warn('[tickets] não consegui avisar no canal de atendimento:', erro.message));
+/**
+ * Posiciona o canal do ticket logo ABAIXO do canal de referência.
+ * Sem categoria e sem parentId: só a ordem no servidor muda.
+ */
+async function posicionarAbaixo(canal, referencia) {
+  if (!canal || !referencia || typeof canal.setPosition !== 'function') return false;
+  try {
+    await canal.setPosition(Number(referencia.position ?? 0) + 1);
+    return true;
+  } catch (erro) {
+    console.warn(`[tickets] não consegui posicionar o ticket abaixo de ${referencia.name}:`, erro.message);
+    return false;
+  }
 }
 
 /**
@@ -303,16 +303,21 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
     };
   }
 
+  const referencia = destino.canal;
   const canal = await guild.channels.create({
     name: nome,
     type: ChannelType.GuildText,
-    ...(categoria ? { parent: categoria.id } : {}),
+    // Com canal de referência o ticket nasce fora de categoria (raiz do servidor).
+    ...(categoria && !referencia ? { parent: categoria.id } : {}),
     topic: `Ticket ${info.nome} de ${usuario.tag || usuario.username} · ORG Royal AP`,
     permissionOverwrites: permissoesDoTicket(guild, client, usuario.id),
   });
 
-  // Mantém o ticket novo no fim da categoria (abaixo dos canais já existentes).
-  if (categoria) {
+  if (referencia) {
+    // Nasce logo ABAIXO do canal de referência (os de baixo descem uma posição).
+    await posicionarAbaixo(canal, referencia);
+  } else if (categoria) {
+    // Compatibilidade: mantém o ticket no fim da categoria.
     try {
       const irmaos = guild.channels.cache.filter(
         (outro) =>
@@ -324,15 +329,20 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
     }
   } else {
     console.warn(
-      '[tickets] nenhuma categoria de atendimento encontrada. Configure TICKET_DESTINO_ID (categoria ou canal) no .env.',
+      '[tickets] nenhum canal/categoria de atendimento encontrado. Configure TICKET_CANAL_ID (canal de referência) no .env ou use /boombot setticket.',
     );
   }
 
   const cargos = [config.CARGO_ADMIN_ID, config.CARGO_STAFF_ID, config.CARGO_MEDIADOR_ID].filter(Boolean);
   const chamada = [mencao(usuario.id), ...cargos.map((id) => mencaoCargo(id))].join(' ');
+  const ondeNasceu = categoria
+    ? ` em **${categoria.name}**`
+    : referencia
+      ? ` logo abaixo de <#${referencia.id}>`
+      : '';
 
   await canal.send({
-    content: `${chamada}\n**Ticket de ${info.nome}** aberto${categoria ? ` em **${categoria.name}**` : ''}. A staff já foi chamada — explique o caso aqui.`,
+    content: `${chamada}\n**Ticket de ${info.nome}** aberto${ondeNasceu}. A staff já foi chamada — explique o caso aqui.`,
     embeds: [
       embed(`${info.emoji} ${info.nome} — Central de Atendimento`, info.boasVindas.join('\n'), {
         cor: config.CORES.principal,
@@ -343,8 +353,6 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
     allowedMentions: { users: [String(usuario.id)], roles: cargos.map(String) },
   });
 
-  await avisarNoCanal(destino.canal, { usuario, info, ticket: canal, categoria });
-
   await auditoria
     .registrar(db, client, {
       guildId: guild.id,
@@ -353,7 +361,7 @@ async function abrirTicket(interaction, { db, client, tipo = 'suporte' }) {
       detalhe:
         `${canal.name} · ${info.nome}` +
         `${categoria ? ` · ${categoria.name}` : ''}` +
-        `${destino.canal ? ` · aviso em #${destino.canal.name}` : ''}`,
+        `${referencia ? ` · abaixo de #${referencia.name}` : ''}`,
     })
     .catch(() => {});
 

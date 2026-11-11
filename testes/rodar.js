@@ -94,12 +94,18 @@ function ambienteFalso() {
               return mensagens.get(id) ?? null;
             },
           },
+          posicao: null,
+          async setPosition(posicao) {
+            canal.posicao = posicao;
+            return canal;
+          },
           async delete() {
             cache.delete(canal.id);
             return canal;
           },
         };
         cache.set(canal.id, canal);
+        guild.channels.cache.set(canal.id, canal);
         return canal;
       },
     },
@@ -197,10 +203,10 @@ function resposta(interaction) {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((linha) => linha.name);
-    for (const esperada of ['usuarios', 'staff', 'paineis', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm']) {
+    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm']) {
       assert.ok(tabelas.includes(esperada), `faltou a tabela ${esperada}`);
     }
-    passar('banco: 12 tabelas criadas automaticamente');
+    passar('banco: 13 tabelas criadas automaticamente');
   }
 
   // ---------- usuários e economia ----------
@@ -464,22 +470,53 @@ function resposta(interaction) {
 
     const embed = painel.embeds[0].toJSON();
     assert.ok(embed.title.includes('1x1'));
-    assert.strictEqual(config.PRECOS.length, 14);
-    assert.strictEqual(embed.fields.length, 14);
+    assert.strictEqual(config.PRECOS.length, 15);
+    assert.strictEqual(embed.fields.length, 15);
     assert.ok(embed.fields[0].name.includes('R$ 0,50'), 'primeiro card é R$ 0,50');
-    assert.ok(embed.fields[13].name.includes('R$ 100,00'), 'último card é R$ 100,00');
+    assert.ok(embed.fields[14].name.includes('R$ 100,00'), 'último card é R$ 100,00');
     assert.deepStrictEqual(config.PRECOS.map(reais), [
-      'R$ 0,50', 'R$ 1,00', 'R$ 1,50', 'R$ 2,50', 'R$ 5,00', 'R$ 10,00', 'R$ 20,00',
-      'R$ 30,00', 'R$ 40,00', 'R$ 50,00', 'R$ 70,00', 'R$ 80,00', 'R$ 90,00', 'R$ 100,00',
+      'R$ 0,50', 'R$ 1,00', 'R$ 1,50', 'R$ 2,00', 'R$ 3,00', 'R$ 4,00', 'R$ 5,00', 'R$ 7,00',
+      'R$ 10,00', 'R$ 15,00', 'R$ 20,00', 'R$ 30,00', 'R$ 50,00', 'R$ 70,00', 'R$ 100,00',
     ]);
-    passar('painel: 14 cards na ordem certa (R$ 0,50 no topo · R$ 100,00 no fundo)');
+    passar('painel antigo: 15 cards na ordem certa (R$ 0,50 no topo · R$ 100,00 no fundo)');
+
+    // ---------- fila nova: 1 mensagem por faixa, menor preço por ÚLTIMO ----------
+    const mensagens = paineis.mensagensFila(modo, entrada);
+    assert.strictEqual(mensagens.length, 15, '15 mensagens por fila');
+    assert.strictEqual(mensagens[0].preco, 10000, 'primeira mensagem é a maior aposta');
+    assert.strictEqual(mensagens[14].preco, 50, 'última mensagem é R$ 0,50 (fica embaixo)');
+    assert.ok(mensagens[14].payload.embeds[0].toJSON().title.includes('R$ 0,50'));
+    assert.ok(mensagens[0].payload.components[0].toJSON().components[0].custom_id.includes(':10000:'));
+    passar('fila: 15 mensagens separadas, do maior preço (topo) ao menor (última, embaixo)');
+
+    // canal da fila nasce logo abaixo do canal de referência
+    const { client: clienteFila, guild: guildFila } = ambienteFalso();
+    const referenciaFila = await guildFila.channels.create({ name: '🎯・AP' });
+    referenciaFila.position = 2;
+    const referenciaAntiga = config.CANAL_FILA_ID;
+    config.CANAL_FILA_ID = referenciaFila.id;
+
+    const canalFila = await paineis.garantirCanalFila(guildFila, db, modo);
+    assert.ok(canalFila.canal, 'canal da fila criado');
+    assert.strictEqual(canalFila.canal.posicao, 3, 'canal logo abaixo do canal de referência');
+
+    const enviadas = await paineis.publicarFila(db, canalFila.canal, { guildId: 'g1', modo, entradas: [] });
+    assert.strictEqual(enviadas.length, 15);
+    assert.strictEqual(canalFila.canal.enviadas.length, 15, '15 mensagens no canal da fila');
+    assert.strictEqual(paineis.mensagensSalvas(db, { guildId: 'g1', modo: 'x1mobile' }).length, 15);
+    assert.strictEqual(
+      await paineis.atualizar(clienteFila, db, { guildId: 'g1', modo: 'x1mobile', preco: 50 }),
+      true,
+    );
+    config.CANAL_FILA_ID = referenciaAntiga;
+    passar('fila: canal abaixo da referência, 15 mensagens publicadas e atualizadas');
 
     const menu = painel.components[0].toJSON().components[0];
     assert.strictEqual(menu.custom_id, 'ap:preco:x1mobile');
-    assert.strictEqual(menu.options.length, 14);
+    assert.strictEqual(menu.options.length, 15);
     const botoesPainel = painel.components[1].toJSON().components.map((botao) => botao.custom_id);
     assert.deepStrictEqual(botoesPainel, ['ap:sair:x1mobile:todos', 'ap:como']);
-    passar('painel: menu com 14 valores e sem botão de ranking');
+    passar('painel: menu com 15 valores e sem botão de ranking');
 
     const mobile = paineis.componentesEntrada(modo, 250)[0].toJSON().components;
     assert.deepStrictEqual(
@@ -625,6 +662,19 @@ function resposta(interaction) {
     assert.ok(resposta(status).embeds[0].toJSON().title.includes('Status'));
     passar('/boombot status: mostra saúde do bot');
 
+    // /boombot setfila: canal de referência das filas
+    const setfila = fakeInteraction({
+      commandName: 'boombot',
+      options: { sub: 'setfila', canal: { id: 'canal-ref-fila', name: '🎯・AP' } },
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(setfila, {
+      db,
+      client: { ws: { ping: 1 }, guilds: { cache: new Collection() } },
+    });
+    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_fila', null), 'canal-ref-fila');
+    passar('/boombot setfila: salva o canal de referência das filas');
+
     // /ticket: Central de Atendimento efêmera, apaga em 15s
     const ticket = fakeInteraction({ commandName: 'ticket' });
     await comandos.executar(ticket, { db, client: null });
@@ -716,6 +766,40 @@ function resposta(interaction) {
     assert.strictEqual(semCategoria.canal.parentId, null, 'não invade a categoria de filas');
     passar('ticket: sem categoria configurada não invade a categoria das filas');
 
+    // Ticket por CANAL de referência: nasce fora de categoria, logo abaixo dele
+    const { client: clientRef, guild: guildRef } = ambienteFalso();
+    const canalRef = {
+      id: 'canal-referencia',
+      name: '🎫・ABRIR-TICKET',
+      type: ChannelType.GuildText,
+      position: 4,
+      enviadas: [],
+      isTextBased: () => true,
+      async send(payload) {
+        canalRef.enviadas.push(payload);
+        return { id: `msg-ref-${canalRef.enviadas.length}` };
+      },
+    };
+    guildRef.channels.cache.set(canalRef.id, canalRef);
+    guildRef.channels.fetch = async (id) => guildRef.channels.cache.get(id) ?? null;
+
+    const destinoAntigo = cfg.TICKET_DESTINO_ID;
+    cfg.CATEGORY_TICKETS_ID = '';
+    cfg.CATEGORIA_SUPORTE_ID = '';
+    cfg.TICKET_DESTINO_ID = 'canal-referencia';
+    const porCanal = await tickets.abrirTicket(
+      { guild: guildRef, guildId: 'g1', user: { id: 'j5', username: 'jogador5', tag: 'jogador5#1' } },
+      { db, client: clientRef, tipo: 'suporte' },
+    );
+    cfg.CATEGORY_TICKETS_ID = categoriaAntiga;
+    cfg.CATEGORIA_SUPORTE_ID = suporteAntigo;
+    cfg.TICKET_DESTINO_ID = destinoAntigo;
+
+    assert.strictEqual(porCanal.canal.parentId, null, 'ticket fora de categoria');
+    assert.strictEqual(porCanal.canal.posicao, 5, 'logo abaixo do canal de referência');
+    assert.strictEqual(canalRef.enviadas.length, 0, 'nada é enviado no chat geral');
+    passar('ticket: canal de referência cria o ticket logo abaixo, sem mensagem pública');
+
     // Botão do painel cria o ticket e devolve o link direto
     const cliqueTicket = fakeInteraction({ commandName: undefined, userId: 'j7' });
     cliqueTicket.customId = 'ap:ticket:suporte';
@@ -734,7 +818,21 @@ function resposta(interaction) {
       ),
       'resposta aponta para o canal criado',
     );
+    assert.strictEqual(cliqueTicket.chamadas.followUp.flags & 64, 64, 'resposta efêmera');
+    assert.deepStrictEqual(
+      cliqueTicket.chamadas.followUp.components[0].toJSON().components.map((botao) => botao.label),
+      ['Ignorar mensagem'],
+    );
     passar('ticket: botão cria o canal na categoria e devolve o link');
+
+    // botão "Ignorar mensagem" apaga o aviso temporário
+    const ignorar = fakeInteraction({ commandName: undefined, userId: 'j7' });
+    ignorar.customId = 'ap:ignorarticket';
+    ignorar.isButton = () => true;
+    ignorar.guild = guildTicket;
+    await require('../src/interacoes/botoes').handleBotao(ignorar, { db, client: clientTicket });
+    assert.strictEqual(ignorar.chamadas.deleteReply, true, 'apaga o aviso efêmero');
+    passar('ticket: botão "Ignorar mensagem" apaga o aviso temporário');
 
     // /pix dentro da sala: mediador manda a chave pelo comando
     const pixCanal = {
@@ -778,7 +876,7 @@ function resposta(interaction) {
     assert.ok(pixCanal.enviadas.length >= 1, 'PIX publicado na sala');
     passar('/pix: mediador envia a chave na sala pelo comando');
 
-    // /filasx1mobile: deferReply imediato + painel de 14 cards publicado
+    // /filasx1mobile: deferReply imediato + 15 mensagens da fila publicadas
     const canalPainel = {
       id: 'canal-painel',
       name: 'ap-1x1',
@@ -797,10 +895,11 @@ function resposta(interaction) {
     });
     await comandos.executar(comandoPainel, { db, client: clientePainel });
     assert.strictEqual(comandoPainel.chamadas.deferReply.flags, 64, 'respondeu antes de montar o painel');
-    assert.strictEqual(canalPainel.enviadas.length, 1, 'painel publicado');
-    assert.strictEqual(canalPainel.enviadas[0].embeds[0].toJSON().fields.length, 14);
-    assert.ok(resposta(comandoPainel).content.includes('publicado'));
-    passar('/filasx1mobile: deferReply em <3s + painel de 14 cards no canal');
+    assert.strictEqual(canalPainel.enviadas.length, 15, '15 mensagens da fila publicadas');
+    assert.ok(canalPainel.enviadas[0].embeds[0].toJSON().title.includes('R$ 100,00'), 'maior aposta no topo');
+    assert.ok(canalPainel.enviadas[14].embeds[0].toJSON().title.includes('R$ 0,50'), 'menor aposta na última');
+    assert.ok(resposta(comandoPainel).embeds[0].toJSON().description.includes('15 mensagens'));
+    passar('/filasx1mobile: deferReply em <3s + 15 mensagens da fila (menor valor embaixo)');
 
     // Botão: ack instantâneo com deferUpdate + resposta em followUp
     const { handleBotao } = require('../src/interacoes/botoes');
@@ -867,11 +966,11 @@ function resposta(interaction) {
     );
     cfg2.CATEGORY_TICKETS_ID = antesCategoria;
 
-    assert.strictEqual(porCanal.canal.parentId, 'cat-atendimento', 'ticket nasce ao lado do canal configurado');
+    assert.strictEqual(porCanal.canal.parentId, null, 'ticket nasce FORA de categoria');
     assert.strictEqual(porCanal.canalDestino?.id, 'canal-atendimento');
-    assert.ok(avisos.length >= 1, 'avisa no canal de atendimento com o link do ticket');
-    assert.ok(avisos[0].content.includes(`<#${porCanal.canal.id}>`));
-    passar('ticket: aceita ID de CANAL de texto, cria ao lado e avisa no canal');
+    assert.strictEqual(porCanal.canal.posicao, 1, 'posicionado logo abaixo do canal de referência');
+    assert.strictEqual(avisos.length, 0, 'nenhuma mensagem pública no chat geral');
+    passar('ticket: aceita ID de CANAL, nasce logo abaixo e sem aviso público');
 
     // /boombot setticket salva a preferência no banco
     const setticket = fakeInteraction({

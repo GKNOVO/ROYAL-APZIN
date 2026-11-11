@@ -15,10 +15,13 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const PLACEHOLDER = 'COLE_SEU_TOKEN_AQUI';
 
 /**
- * Faixas de aposta em centavos, na ordem dos cards do painel:
- * R$ 0,50 no topo, valores crescendo, R$ 100,00 no fundo.
+ * Faixas de aposta em centavos: 15 valores, de R$ 0,50 a R$ 100,00.
+ *
+ * Cada valor vira UMA mensagem no canal da fila. As mensagens são enviadas do
+ * maior para o menor, então a faixa de R$ 0,50 fica na última mensagem
+ * (embaixo) e os valores sobem conforme você rola para cima.
  */
-const PRECOS = [50, 100, 150, 250, 500, 1000, 2000, 3000, 4000, 5000, 7000, 8000, 9000, 10000];
+const PRECOS = [50, 100, 150, 200, 300, 400, 500, 700, 1000, 1500, 2000, 3000, 5000, 7000, 10000];
 
 const PLATAFORMAS = {
   mobile: 'mobile',
@@ -140,6 +143,12 @@ const config = {
   CAMINHO_BANCO: path.resolve(texto(process.env.DATABASE_PATH, 'database/royal.db')),
 
   CATEGORIA_FILAS_ID: texto(process.env.CATEGORIA_FILAS_ID),
+  /**
+   * CANAL DE REFERÊNCIA das filas: o canal de cada fila nasce logo ABAIXO
+   * deste canal (nada de categoria). Também dá para definir com
+   * `/boombot setfila canal:#canal`.
+   */
+  CANAL_FILA_ID: texto(process.env.CANAL_FILA_ID),
 
   /**
    * ONDE OS TICKETS NASCEM — aceita ID de CATEGORIA ou de CANAL DE TEXTO.
@@ -147,8 +156,8 @@ const config = {
    */
   TICKET_DESTINO_ID: texto(process.env.TICKET_DESTINO_ID),
   TICKET_CATEGORIA_ID: texto(process.env.TICKET_CATEGORIA_ID),
+  /** Canal de referência dos tickets: o ticket nasce logo ABAIXO dele. */
   TICKET_CANAL_ID: texto(process.env.TICKET_CANAL_ID),
-  TICKET_AVISO_CANAL: booleano(process.env.TICKET_AVISO_CANAL, true),
   /** Categoria (ou canal) onde os tickets são criados — nome oficial. */
   CATEGORY_TICKETS_ID: texto(process.env.CATEGORY_TICKETS_ID),
   /** Nome antigo da mesma variável — continua aceito para não quebrar .env já existente. */

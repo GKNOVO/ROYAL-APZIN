@@ -369,7 +369,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
     throw new Error(`Você já está nessa fila (posição ${resultado.posicao}).`);
   }
 
-  await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id });
+  await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id, preco: valor });
 
   const naFila = filas.contar(db, { guildId: guild.id, modo: modoInfo.id, preco: valor, gelo });
   if (naFila < modoInfo.jogadores) {
@@ -422,7 +422,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
   });
 
   await publicarSala(client, db, partida);
-  await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id });
+  await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id, preco: valor });
   await auditoria.registrar(db, client, {
     guildId: guild.id,
     acao: 'AP criado',

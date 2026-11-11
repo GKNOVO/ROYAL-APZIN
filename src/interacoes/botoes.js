@@ -2,6 +2,7 @@
 
 /** Cliques em botões: fila, gelo, regras, mediação, PIX, resultado e tickets. */
 
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config');
 const fluxo = require('../servicos/fluxo');
 const partidas = require('../servicos/partidas');
@@ -85,7 +86,7 @@ async function sairDaFila(interaction, { db, client }, modoId, alvo) {
     preco,
   });
   if (!removidas) return responderErro(interaction, 'Você não está nessa fila.');
-  await paineis.atualizar(client, db, { guildId: interaction.guildId, modo: modo.id });
+  await paineis.atualizar(client, db, { guildId: interaction.guildId, modo: modo.id, preco });
   return responderPrivado(interaction, {
     embeds: [embedSucesso(`Você saiu da fila de **${modo.titulo}**${preco ? ` (${reais(preco)})` : ''}.`)],
   });
@@ -204,6 +205,17 @@ async function fecharSala(interaction, { db, client }, partidaId) {
     }
   }, 5000);
   return true;
+}
+
+/** Botão "Ignorar mensagem" que acompanha o aviso efêmero do ticket. */
+function linhaIgnorar() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ap:ignorarticket')
+      .setLabel('Ignorar mensagem')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Secondary),
+  );
 }
 
 async function handleBotao(interaction, ctx) {
@@ -366,10 +378,12 @@ async function handleBotao(interaction, ctx) {
       case 'ticket': {
         try {
           const aberto = await tickets.abrirTicket(interaction, { db, client, tipo: args[0] });
+          // Resposta estritamente efêmera: nada é publicado no chat geral.
           await responderPrivado(interaction, {
             content: aberto.existente
               ? `🎫 Seu ticket já está aberto: ${aberto.link}\nContinue o atendimento por lá.`
-              : `✅ Seu ticket foi criado com sucesso! Acesse: ${aberto.link}`,
+              : `✅ Seu ticket foi criado com sucesso! Acesse: ${aberto.link}\n\n_A staff já foi avisada na sala. Ninguém mais vê esta mensagem._`,
+            components: [linhaIgnorar()],
           });
         } catch (erro) {
           console.error('[botoes] ticket:', erro.message);
@@ -377,6 +391,18 @@ async function handleBotao(interaction, ctx) {
             interaction,
             '❌ Não consegui abrir o ticket. Chame um ADM (confira a categoria de tickets e a permissão **Gerenciar Canais**).',
           ).catch(() => {});
+        }
+        return true;
+      }
+
+      case 'ignorarticket': {
+        // Some com o aviso temporário só na tela de quem clicou.
+        try {
+          await interaction.deleteReply();
+        } catch (erro) {
+          await interaction
+            .editReply({ content: '✅ Aviso dispensado.', embeds: [], components: [] })
+            .catch(() => console.warn('[botoes] não consegui apagar o aviso temporário:', erro.message));
         }
         return true;
       }

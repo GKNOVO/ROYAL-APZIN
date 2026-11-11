@@ -45,6 +45,17 @@ const ESQUEMA = [
     PRIMARY KEY (guild_id, modo)
   )`,
 
+  // Mensagens de cada fila publicada (uma por faixa de preço)
+  `CREATE TABLE IF NOT EXISTS mensagens_painel (
+    guild_id TEXT NOT NULL,
+    modo TEXT NOT NULL,
+    preco INTEGER NOT NULL,
+    canal_id TEXT NOT NULL,
+    mensagem_id TEXT NOT NULL,
+    atualizado_em INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, modo, preco)
+  )`,
+
   // Fila: uma linha por jogador esperando em (modo, preço, gelo)
   `CREATE TABLE IF NOT EXISTS filas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

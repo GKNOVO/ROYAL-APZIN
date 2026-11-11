@@ -67,7 +67,7 @@ serviço não entra mais em timeout.
    - **Start Command:** `npm start`
    - **Instance Type:** `Free`
 4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
-   `CATEGORIA_FILAS_ID`, `CATEGORY_TICKETS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
+   `CANAL_FILA_ID`, `TICKET_CANAL_ID`, `CATEGORIA_FILAS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
    `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
    Não precisa criar `PORT`: o Render injeta essa variável sozinho.
 5. **Create Web Service**. Nos logs deve aparecer:
@@ -142,11 +142,12 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `GUILD_ID` | não | ID do seu servidor. **Preencha para os comandos aparecerem na hora** (vazio = global, até 1h) | `987654321098765432` |
 | `DATABASE_PATH` | não | Onde fica o banco | `database/royal.db` |
 | `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
-| `CATEGORIA_FILAS_ID` | recomendado | Categoria onde as salas privadas de AP são criadas | `111222333444555666` |
-| `TICKET_DESTINO_ID` | opcional | Onde os tickets nascem: ID de **categoria** ou de **canal de texto** | `111222333444555777` |
-| `CATEGORY_TICKETS_ID` | opcional | Nome antigo/alternativo do mesmo destino (aceita categoria ou canal) | `111222333444555777` |
-| `TICKET_CATEGORIA_ID` / `TICKET_CANAL_ID` | opcional | Alternativas separadas para categoria e para canal de texto | `111222333444555888` |
-| `TICKET_AVISO_CANAL` | opcional | Avisa no canal de atendimento quando um ticket é aberto (`true`/`false`) | `true` |
+| `CANAL_FILA_ID` | recomendado | **Canal de referência das filas**: o canal de cada fila nasce logo **abaixo** dele (também dá para definir com `/boombot setfila`) | `111222333444555666` |
+| `TICKET_CANAL_ID` | recomendado | **Canal de referência dos tickets**: o ticket nasce logo **abaixo** dele, sem mensagem no chat (também dá para definir com `/boombot setticket`) | `111222333444555777` |
+| `CATEGORIA_FILAS_ID` | opcional | Categoria onde as salas privadas de AP são criadas (compatibilidade) | `111222333444555666` |
+| `TICKET_DESTINO_ID` | opcional | Alternativa ao `TICKET_CANAL_ID` (aceita canal de texto ou, no modo antigo, categoria) | `111222333444555777` |
+| `CATEGORY_TICKETS_ID` | opcional | Nome antigo/alternativo do mesmo destino | `111222333444555777` |
+| `TICKET_CATEGORIA_ID` | opcional | Categoria dos tickets (modo antigo, sem posicionamento por canal) | `111222333444555888` |
 | `NIX_API_URL` | opcional | Endereço da API de salas da Nix | `https://salas.nixbot.vip` |
 | `NIX_API_KEY` | opcional | Chave da API gerada em nixff.vip (sem ela só o `/nix` fica limitado) | `nix_sk_...` |
 | `CARGO_ADMIN_ID` | recomendado | Quem manda em tudo | ID do cargo ADM |
@@ -158,6 +159,32 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 
 **Como pegar um ID:** no Discord, Configurações → Avançado → **Modo desenvolvedor** ligado. Depois
 clique com o botão direito no cargo/canal/categoria → **Copiar ID**.
+
+### 3.1 Filas posicionadas abaixo de um canal
+
+Nada de categoria para as filas: defina o **canal de referência** (`CANAL_FILA_ID` no `.env` ou
+`/boombot setfila canal:#seu-canal`). Quando a staff roda `/filasx1mobile`, `/filasx4emu` etc.,
+o bot cria (ou reaproveita) o canal daquele modo **logo abaixo** do canal de referência e publica
+ali as **15 mensagens**, uma por faixa de aposta:
+
+```
+💵 R$ 100,00   ← primeira mensagem (topo)
+💵 R$ 70,00
+...
+💵 R$ 1,00
+💵 R$ 0,50     ← última mensagem (fica embaixo)
+```
+
+Cada mensagem tem os próprios botões (Gelo Infinito / Gelo Normal / Normal / Full UMP e XM8 /
+Full Capa / 1 Emu... / Sair) e é atualizada sozinha quando alguém entra ou sai daquela faixa.
+
+### 3.2 Tickets: canal de referência e aviso temporário
+
+Com `TICKET_CANAL_ID` (ou `/boombot setticket destino:#seu-canal`), o canal do ticket nasce **fora
+de categoria**, posicionado **logo abaixo** do canal de referência. Ao clicar em um botão da
+Central de Atendimento, **nada é publicado no chat**: o jogador recebe apenas uma resposta
+efêmera (só ele vê) com o link do ticket e o botão **Ignorar mensagem**, que apaga esse aviso da
+tela dele.
 
 > Se um cargo ficar vazio, o bot usa as permissões do Discord como reserva: quem tem
 > **Gerenciar Servidor** é tratado como staff/ADM.
