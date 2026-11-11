@@ -1,0 +1,22 @@
+{
+  "name": "royal-ap-bot",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Bot ORG Royal AP: filas, apostas, mediação AP/X1-X4, tickets e salas automáticas da Nix FF",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "node testes/rodar.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.4.1"
+  }
+}
