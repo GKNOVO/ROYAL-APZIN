@@ -421,8 +421,16 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
   }
 
   const naFila = filas.contar(db, { guildId: guild.id, modo: modoInfo.id, preco: valor, gelo });
-  if (naFila < modoInfo.jogadores) {
-    return { posicao: resultado.posicao, naFila, faltam: modoInfo.jogadores - naFila, fechou: false, partida: null };
+  // TODA fila abre com 2 capitães (1 por time). Em 3x3/4x4 o capitão leva o
+  // time dele para a sala personalizada com o ID/senha — não espera 6 ou 8.
+  if (naFila < config.CAPITAES_POR_PARTIDA) {
+    return {
+      posicao: resultado.posicao,
+      naFila,
+      faltam: config.CAPITAES_POR_PARTIDA - naFila,
+      fechou: false,
+      partida: null,
+    };
   }
 
   const ids = filas.reservar(db, {
@@ -430,7 +438,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
     modo: modoInfo.id,
     preco: valor,
     gelo,
-    quantidade: modoInfo.jogadores,
+    quantidade: config.CAPITAES_POR_PARTIDA,
   });
   if (!ids) {
     return { posicao: resultado.posicao, naFila, faltam: 1, fechou: false, partida: null };
@@ -438,7 +446,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
 
   const jogadores = ids.map((id, indice) => ({
     userId: id,
-    time: indice < modoInfo.time ? 1 : 2,
+    time: indice + 1,
   }));
 
   let canal = null;
@@ -457,7 +465,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
     }
     await paineis.atualizar(client, db, { guildId: guild.id, modo: modoInfo.id });
     throw new Error(
-      'O grupo fechou, mas não consegui criar a sala privada. Peça para um ADM verificar se o bot tem **Gerenciar Canais** e se a categoria de filas existe.',
+      'Os dois capitães entraram, mas não consegui criar a sala privada. Peça para um ADM verificar se o bot tem **Gerenciar Canais** e se a categoria de filas existe.',
     );
   }
 
@@ -475,7 +483,7 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
   await auditoria.registrar(db, client, {
     guildId: guild.id,
     acao: 'AP criado',
-    detalhe: `${modoInfo.titulo} · ${reais(valor)} · ${gelo} · sala ${canal.name} · ${ids.length} jogadores`,
+    detalhe: `${modoInfo.titulo} · ${reais(valor)} · ${gelo} · sala ${canal.name} · ${ids.length} capitães (1 por time)`,
   });
 
   return { posicao: resultado.posicao, naFila: 0, faltam: 0, fechou: true, partida, canalId: canal.id };

@@ -171,7 +171,8 @@ Nada de canal novo para as filas: quando a staff roda `/filasx1mobile`, `/filasx
 publica as **15 mensagens** (uma por faixa de aposta) **no próprio canal onde o comando foi
 executado** — o comando não cria canal nenhum.
 
-Já a **sala privada da partida** (criada quando dois jogadores fecham a mesma faixa) nasce
+Já a **sala privada da partida** (criada assim que **2 capitães — um de cada time —** entram na
+mesma faixa) nasce
 **dentro da categoria** configurada em `CATEGORIA_FILAS_ID` (ou `/boombot setcategoria`). Sem
 categoria configurada, o bot procura uma categoria de filas pelo nome antes de criar na raiz:
 
@@ -184,8 +185,12 @@ categoria configurada, o bot procura uma categoria de filas pelo nome antes de c
 ```
 
 Cada mensagem é um card enxuto — título `1v1 Mobile | R$ 0,50` e o campo **Jogadores**
-(`Nenhum jogador na fila.` ou `Gelo Normal | @jogador`) — atualizado na hora em que alguém entra
+(`Nenhum jogador na fila.` ou `Gelo Normal | @capitão`) — atualizado na hora em que alguém entra
 ou sai daquela faixa.
+
+> **Toda fila abre com 2 pessoas.** Em 1x1, 2x2, 3x3 ou 4x4, de qualquer plataforma, o canal
+> privado nasce no segundo capitão. O 3x3 não espera 6 pessoas e o 4x4 não espera 8: cada capitão
+> recebe o ID/senha na sala privada e leva o time dele para a sala personalizada do Free Fire.
 
 O botão **❌ Sair da fila** é dinâmico: ele não fica no card público (que é igual para todos),
 aparece só na resposta efêmera de quem está naquela faixa — ninguém mais vê o botão.
@@ -242,11 +247,13 @@ Mencionar Everyone · Anexar Arquivos.
 ## 5. Como funciona um AP
 
 1. **Jogador** escolhe a faixa no menu do painel (R$ 0,50 até R$ 100,00) e o tipo de gelo.
-2. Quando o grupo fecha (2 jogadores no 1x1, 8 no 4x4…), o bot limpa a fila do painel e **cria a
-   sala privada** (`#fila-gelo-normal-001`, `#fila-gelo-normal-002`…) **dentro da categoria de
-   filas**, só com os jogadores + mediadores/ADM.
+2. Assim que **2 capitães (1 por time)** entram na mesma faixa — em **qualquer formato**, do 1x1 ao
+   4x4 — o bot limpa a fila do painel e **cria a sala privada** (`#fila-gelo-normal-001`,
+   `#fila-gelo-normal-002`…) **dentro da categoria de filas**, só com os 2 capitães +
+   mediadores/ADM. O time completo **não** precisa estar no Discord: cada capitão leva os amigos
+   para a sala personalizada com o ID/senha que recebeu.
 3. A sala nasce com o card **⏳ Aguardando · 1v1 Mobile Gelo Normal** — aposta, premiação e os
-   jogadores numerados — e os botões **Confirmar Partida** e **Cancelar**.
+   2 capitães numerados — e os botões **Confirmar Partida** e **Cancelar**.
 4. Cada confirmação aparece no chat da sala: *“✅ @Jogador1 confirmou a partida. Agora falta apenas
    @Jogador2 para confirmar.”* e, na segunda, *“Todos confirmaram! Partida iniciando...”* — marcando
    só **@MEDIADOR / @ADM** (o atendimento de tickets não é chamado em partida).
@@ -254,8 +261,8 @@ Mencionar Everyone · Anexar Arquivos.
 6. **💸 Liberar PIX** (botão) ou **`/pix`** na sala → a chave PIX **daquele mediador** aparece na
    sala e na DM dos jogadores. Ele confere os comprovantes e clica em **✅ Pagamento recebido**.
 7. **🎮 Criar sala (Nix)** → a API cria a sala no jogo e o bot publica **ID, senha e um botão para
-   abrir o Free Fire** direto no canal da fila (onde as 15 mensagens foram publicadas).
-8. Os dois jogadores entram na sala do Free Fire e cada um digita **`/go`** no canal da partida. No
+   abrir o Free Fire** **somente no canal privado da partida** — nunca no canal público da fila.
+8. Os dois capitães entram na sala do Free Fire com o time e cada um digita **`/go`** no canal da partida. No
    segundo GO o bot anuncia *“Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.”*
    e a partida passa para **em andamento**.
 9. Fim da partida: **🏆 Equipe 1/2 venceu** (ou **⚠️ W.O.**). O bot atualiza estatísticas, ranking,
@@ -267,10 +274,10 @@ em cada etapa.
 
 ### 5.4 Início rápido com `/go`
 
-Depois que o mediador publica o ID e a senha, os jogadores entram na sala personalizada do Free Fire
-e **cada um digita `/go` no canal privado da partida**:
+Depois que o mediador publica o ID e a senha, os capitães entram na sala personalizada do Free Fire
+com os times e **cada capitão digita `/go` no canal privado da partida**:
 
-- o primeiro `/go` só registra e avisa no canal (*“O jogador @X deu GO na sala!”*);
+- o primeiro `/go` só registra e avisa no canal (*“O capitão @X deu GO na sala!”*);
 - o segundo `/go` dispara *“Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.”*
   e a partida vai para **em andamento**;
 - `/go` repetido não conta duas vezes;

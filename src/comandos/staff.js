@@ -250,8 +250,9 @@ const comandos = [
       const finalizadas = todas.filter((partida) => partida.status === 'finalizada');
       const canceladas = todas.filter((partida) => partida.status === 'cancelada');
       const emAndamento = todas.filter((partida) => !['finalizada', 'cancelada'].includes(partida.status));
+      const contarJogadores = db.prepare('SELECT COUNT(*) AS total FROM partida_jogadores WHERE partida_id = ?');
       const movimentado = finalizadas.reduce(
-        (soma, partida) => soma + partida.preco * (config.modoPorId(partida.modo)?.jogadores ?? 2),
+        (soma, partida) => soma + partida.preco * (contarJogadores.get(partida.id).total || 2),
         0,
       );
       const porModo = new Map();

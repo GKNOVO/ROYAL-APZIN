@@ -33,7 +33,7 @@ function linhasDeEntrada(modo, preco, entradas) {
   const doPreco = entradas.filter((linha) => Number(linha.preco) === Number(preco));
   const variantes = config.variantesDoModo(modo).map((variante) => {
     const ids = doPreco.filter((linha) => linha.gelo === variante.id).map((linha) => linha.user_id);
-    return `${variante.emoji} **${variante.nome}** (${ids.length}/${modo.jogadores}): ${listaUsuarios(ids)}`;
+    return `${variante.emoji} **${variante.nome}** (${ids.length}/${config.CAPITAES_POR_PARTIDA} capitães): ${listaUsuarios(ids)}`;
   });
   return { doPreco, variantes };
 }
@@ -51,11 +51,11 @@ function linhaDePreco(modo, preco, entradas) {
 /** Painel antigo (todos os valores em um embed) — mantido para compatibilidade. */
 function embedPainel(modo, entradas = []) {
   return embed(`🎯 AP ${modo.titulo}`, [
-    `**Modo:** ${modo.titulo}   ·   **Fecha com:** ${modo.jogadores} jogadores (${modo.time}x${modo.time})`,
+    `**Modo:** ${modo.titulo}   ·   **Abre com:** ${config.CAPITAES_POR_PARTIDA} capitães (1 por time) · formato ${modo.time}x${modo.time}`,
     `**Cards:** de ${reais(config.PRECOS[0])} (topo) até ${reais(config.PRECOS[config.PRECOS.length - 1])} (fundo).`,
     '',
     '**Como entrar:** escolha o valor no menu abaixo e depois o botão da sua categoria.',
-    'Quando o grupo fecha, o bot abre uma **sala privada** com a regra, o mediador e o PIX.',
+    'Quando os 2 capitães entram, o bot abre uma **sala privada** com a regra, o mediador e o PIX.',
   ].join('\n'), {
     cor: config.CORES.principal,
     campos: config.PRECOS.map((preco) => linhaDePreco(modo, preco, entradas)),
@@ -72,7 +72,7 @@ function componentesPainel(modo) {
       config.PRECOS.map((preco) => ({
         label: reais(preco),
         value: String(preco),
-        description: `AP ${modo.titulo} · ${modo.jogadores} jogadores`,
+        description: `AP ${modo.titulo} · 2 capitães (1 por time)`,
       })),
     );
 

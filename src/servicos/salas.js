@@ -73,14 +73,16 @@ function componentesSala() {
 }
 
 /**
- * Publica o ID/senha no canal da fila. Devolve o canal usado (ou null).
+ * Publica o ID/senha SÓ no canal privado da partida (os 2 capitães).
+ * O canal público da fila nunca recebe ID/senha. Devolve o canal usado.
  */
 async function publicarSalaLiberada(client, db, partidaId, dados) {
   const partida = partidas.buscar(db, partidaId);
   if (!partida) return null;
   const lista = partidas.jogadores(db, partidaId);
 
-  const canalId = canalDaFila(db, partida) || partida.canal_id;
+  const canalId = partida.canal_id;
+  if (!canalId) return null;
   const canal = client?.channels?.cache?.get?.(canalId) || (await client?.channels?.fetch?.(canalId).catch?.(() => null));
   if (!canal?.send) return null;
 
@@ -118,7 +120,7 @@ async function criarSalaDaPartida(client, db, { partidaId }) {
     sessao: dados.session_id ?? null,
   });
   const canalId = await publicarSalaLiberada(client, db, partidaId, dados).catch((erro) => {
-    console.error('[salas] não consegui avisar no canal da fila:', erro.message);
+    console.error('[salas] não consegui avisar na sala privada:', erro.message);
     return null;
   });
 

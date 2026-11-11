@@ -416,26 +416,36 @@ function resposta(interaction) {
     assert.strictEqual(blacklist.remover(db2, { guildId: guild.id, userId: 'banido' }), 1);
     passar('fluxo: blacklist bloqueia entrada e pode ser removida');
 
-    // modo 4x4 precisa de 8 jogadores
-    for (let i = 1; i <= 7; i += 1) {
-      filas.entrar(db2, { guildId: guild.id, modo: 'x4misto', preco: 10000, gelo: 'emu1', userId: `t${i}` });
-    }
-    const oitavo = await fluxo.entrarNaFila(client, db2, {
+    // 4x4 também abre com 2 capitães (1 por time) — não espera 8 pessoas.
+    const primeiro4x4 = await fluxo.entrarNaFila(client, db2, {
       guild,
-      userId: 't8',
+      userId: 't1',
       modo: 'x4misto',
       preco: 10000,
       gelo: 'emu1',
     });
-    assert.strictEqual(oitavo.fechou, true);
-    const jogadores4x4 = partidas.jogadores(db2, oitavo.partida.id);
-    assert.strictEqual(jogadores4x4.length, 8);
-    assert.strictEqual(jogadores4x4.filter((linha) => linha.time === 1).length, 4);
-    assert.strictEqual(jogadores4x4.filter((linha) => linha.time === 2).length, 4);
-    passar('fluxo: 4x4 fecha com 8 jogadores e divide 4x4');
+    assert.strictEqual(primeiro4x4.fechou, false, 'a 1ª pessoa sozinha não abre a sala');
+    assert.strictEqual(primeiro4x4.faltam, 1);
+    const segundo4x4 = await fluxo.entrarNaFila(client, db2, {
+      guild,
+      userId: 't2',
+      modo: 'x4misto',
+      preco: 10000,
+      gelo: 'emu1',
+    });
+    assert.strictEqual(segundo4x4.fechou, true, '2 capitães abrem o 4x4');
+    assert.ok(segundo4x4.canalId, 'canal privado do 4x4 criado com 2 pessoas');
+    const jogadores4x4 = partidas.jogadores(db2, segundo4x4.partida.id);
+    assert.strictEqual(jogadores4x4.length, 2);
+    assert.deepStrictEqual(
+      jogadores4x4.map((linha) => [linha.user_id, linha.time]),
+      [['t1', 1], ['t2', 2]],
+      'um capitão por time',
+    );
+    passar('fluxo: 4x4 abre com 2 capitães (1 por time) e o ID/senha vai só para a sala privada');
 
     // W.O.
-    const wo = await fluxo.aplicarWO(client, db2, { partidaId: oitavo.partida.id, timeAusente: 1, autorId: 'med1' });
+    const wo = await fluxo.aplicarWO(client, db2, { partidaId: segundo4x4.partida.id, timeAusente: 1, autorId: 'med1' });
     assert.strictEqual(wo.partida.vencedor_time, 2);
     const ausente = usuarios.resumo(db2, guild.id, 't1');
     assert.strictEqual(ausente.wos, 1);
@@ -633,6 +643,75 @@ function resposta(interaction) {
     assert.ok(aviso2.includes('Todos confirmaram! Partida iniciando...'), aviso2);
     assert.strictEqual(partidas.buscar(db3, fechou.partida.id).status, 'aguardando_mediador');
     passar('matchmaking: 2ª confirmação libera "Todos confirmaram! Partida iniciando..."');
+
+    // ID/senha nunca vão para o canal público: só para o canal privado dos capitães.
+    const salasServico = require('../src/servicos/salas');
+    const canalPrivado = client.channels.cache.get(fechou.canalId);
+    const antesSala = canalPrivado.enviadas.length;
+    const canalUsado = await salasServico.publicarSalaLiberada(client, db3, fechou.partida.id, {
+      room_id: '99887766',
+      password: 'senha-teste',
+      session_id: 'sess-teste',
+    });
+    assert.strictEqual(canalUsado, canalPrivado.id);
+    assert.strictEqual(canalPrivado.enviadas.length, antesSala + 1);
+    assert.ok(
+      String(canalPrivado.enviadas.at(-1).payload.embeds[0].toJSON().description).includes('senha-teste'),
+    );
+    passar('matchmaking: ID/senha publicados somente na sala privada (não no canal da fila)');
+  }
+
+  // ---------- todas as 15 filas abrem com 2 capitães (1 por time) ----------
+  {
+    const { client, guild } = ambienteFalso();
+    const dbCap = abrirBanco(path.join(pasta, 'capitaes.db'));
+    let testadas = 0;
+    let combinacoes = 0;
+
+    for (const modo of config.MODOS) {
+      for (const variante of config.variantesDoModo(modo)) {
+        const gelo = variante.id;
+        const capitao1 = `${modo.id}-${gelo}-cap1`;
+        const capitao2 = `${modo.id}-${gelo}-cap2`;
+
+        const sozinho = await fluxo.entrarNaFila(client, dbCap, {
+          guild,
+          userId: capitao1,
+          modo: modo.id,
+          preco: 50,
+          gelo,
+        });
+        assert.strictEqual(sozinho.fechou, false, `${modo.id}/${gelo}: 1 pessoa não pode abrir a sala`);
+        assert.strictEqual(sozinho.faltam, 1, `${modo.id}/${gelo}: falta 1 capitão`);
+
+        const dupla = await fluxo.entrarNaFila(client, dbCap, {
+          guild,
+          userId: capitao2,
+          modo: modo.id,
+          preco: 50,
+          gelo,
+        });
+        assert.strictEqual(dupla.fechou, true, `${modo.id}/${gelo}: 2 pessoas abrem a sala`);
+        assert.ok(dupla.canalId, `${modo.id}/${gelo}: canal privado criado`);
+
+        const lista = partidas.jogadores(dbCap, dupla.partida.id);
+        assert.deepStrictEqual(
+          lista.map((linha) => [linha.user_id, linha.time]),
+          [[capitao1, 1], [capitao2, 2]],
+          `${modo.id}/${gelo}: um capitão de cada time`,
+        );
+        testadas += 1;
+      }
+      combinacoes += 1;
+    }
+
+    assert.strictEqual(combinacoes, 15);
+    assert.strictEqual(
+      testadas,
+      config.MODOS.reduce((soma, modo) => soma + config.variantesDoModo(modo).length, 0),
+    );
+    passar(`matchmaking: ${testadas} entradas (15 filas, todas as variantes) abrem com 2 capitães`);
+    dbCap.close();
   }
 
   // ---------- mediação: configuração, plantão, PIX, telagem e /verp ----------

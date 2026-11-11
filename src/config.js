@@ -63,6 +63,13 @@ const MODOS = MODOS_BRUTOS.map(([id, nome, plataforma, time]) => ({
 const POR_ID = new Map(MODOS.map((modo) => [modo.id, modo]));
 
 /**
+ * TODA fila abre com 2 capitães (1 por time), não importa o formato (1x1…4x4).
+ * Os demais integrantes do time entram na sala personalizada com o ID/senha
+ * que o capitão recebe no canal privado.
+ */
+const CAPITAES_POR_PARTIDA = 2;
+
+/**
  * Botões de entrada de cada categoria. O "id" é o que fica gravado na fila
  * (coluna gelo), então não mude depois de já ter fila rodando.
  */
@@ -197,6 +204,8 @@ const config = {
     RANKING: 10,
     REGRAS: 900,
   },
+
+  CAPITAES_POR_PARTIDA,
 
   CORES: {
     principal: 0x9b5cff,

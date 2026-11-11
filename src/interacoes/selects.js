@@ -122,15 +122,17 @@ async function handleSelect(interaction, ctx) {
   const entradas = filas.listar(ctx.db, { guildId: interaction.guildId, modo: modo.id, preco });
   const linhas = config.variantesDoModo(modo).map((variante) => {
     const ids = entradas.filter((linha) => linha.gelo === variante.id).map((linha) => linha.user_id);
-    return `${variante.emoji} **${variante.nome}** (${ids.length}/${modo.jogadores}): ${listaUsuarios(ids)}`;
+    return `${variante.emoji} **${variante.nome}** (${ids.length}/${config.CAPITAES_POR_PARTIDA} capitães): ${listaUsuarios(ids)}`;
   });
 
   const descricao = [
     `**Modo:** ${modo.titulo}`,
     `**Aposta:** ${reais(preco)} por jogador`,
-    `**Fecha com:** ${modo.jogadores} jogadores`,
+    `**Abre com:** ${config.CAPITAES_POR_PARTIDA} capitães (1 por time) · formato ${modo.time}x${modo.time}`,
     '',
     ...linhas,
+    '',
+    'Cada capitão pega o ID/senha na sala privada e leva o time dele.',
     '',
     'Escolha o botão da sua categoria para entrar:',
   ].join('\n');
