@@ -22,17 +22,9 @@ const {
   ehAdmin,
   ehStaff,
   ehSuporte,
-  ehMediadorDaPartida,
 } = require('../util/seguranca');
 
 const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
-
-/**
- * Só o mediador que assumiu a partida (ou um ADM) age nela.
- * A checagem é de BACKEND: não depende de o botão estar visível para alguém.
- */
-const podeMediarSala = (partida, interaction) =>
-  ehMediadorDaPartida(partida, interaction.member, interaction.user?.id);
 
 /**
  * Mensagem PÚBLICA na sala: quem confirmou, quem falta e a marcação da
@@ -164,7 +156,7 @@ async function confirmarRegras(interaction, { db, client }, partidaId) {
 }
 
 async function assumirSala(interaction, { db, client }, partidaId) {
-  if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+  if (!ehMediador(interaction.member)) {
     return responderErro(interaction, 'Só mediadores/ADM podem assumir salas.');
   }
   const registro = staff.obter(db, interaction.guildId, interaction.user.id);
@@ -181,11 +173,8 @@ async function assumirSala(interaction, { db, client }, partidaId) {
     await auditoria.registrar(db, client, {
       guildId: interaction.guildId,
       autorId: interaction.user.id,
-      autorTag: interaction.user.tag,
-      canalId: interaction.channelId,
       acao: 'Sala assumida',
       detalhe: `Sala ${partidaId} · ${reais(partida.preco)}`,
-      motivo: 'Mediador assumiu a mediação',
     });
     return responderPrivado(interaction, {
       embeds: [embedSucesso('Você assumiu a sala. Agora envie seu PIX e confira o pagamento.')],
@@ -196,18 +185,16 @@ async function assumirSala(interaction, { db, client }, partidaId) {
 }
 
 async function enviarPix(interaction, { db, client }, partidaId) {
+  if (!ehMediador(interaction.member)) return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
   const partida = partidas.buscar(db, partidaId);
   if (!partida) return responderErro(interaction, 'Sala não encontrada.');
-  if (!podeMediarSala(partida, interaction)) {
-    return responderErro(interaction, 'Só o mediador responsável por esta sala pode enviar o PIX.');
-  }
-  if (partida.status !== partidas.STATUS.AGUARDANDO_PAGAMENTO) {
-    return responderErro(interaction, 'Esse PIX não é mais desta etapa da partida. Atualize o painel.');
-  }
 
   const registro = staff.obter(db, interaction.guildId, interaction.user.id);
   if (!registro?.pix_chave) {
     return responderErro(interaction, 'Você ainda não cadastrou PIX. Use `/registrar_pix`.');
+  }
+  if (partida.mediador_id && partida.mediador_id !== interaction.user.id && !ehAdmin(interaction.member)) {
+    return responderErro(interaction, 'Essa sala é de outro mediador.');
   }
 
   await fluxo.anunciarPix(client, db, {
@@ -221,22 +208,15 @@ async function enviarPix(interaction, { db, client }, partidaId) {
 }
 
 async function pagamentoRecebido(interaction, { db, client }, partidaId) {
-  const partida = partidas.buscar(db, partidaId);
-  if (!partida) return responderErro(interaction, 'Sala não encontrada.');
-  if (!podeMediarSala(partida, interaction)) {
-    return responderErro(interaction, 'Só o mediador responsável por esta sala pode confirmar o pagamento.');
-  }
+  if (!ehMediador(interaction.member)) return responderErro(interaction, 'Só o mediador pode confirmar o pagamento.');
   try {
     partidas.marcarPago(db, partidaId);
     await fluxo.atualizarPartida(client, db, partidaId);
     await auditoria.registrar(db, client, {
       guildId: interaction.guildId,
       autorId: interaction.user.id,
-      autorTag: interaction.user.tag,
-      canalId: interaction.channelId,
       acao: 'Pagamento confirmado',
-      detalhe: `Sala ${partidaId} · ${reais(partida.preco)}`,
-      motivo: 'Comprovantes conferidos pelo mediador',
+      detalhe: `Sala ${partidaId}`,
     });
     return responderPrivado(interaction, {
       embeds: [
@@ -331,13 +311,8 @@ async function handleBotao(interaction, ctx) {
         return true;
 
       case 'vencer': {
-        const partidaVenc = partidas.buscar(db, args[0]);
-        if (!podeMediarSala(partidaVenc, interaction)) {
-          await responderErro(interaction, 'Só o mediador responsável por esta sala pode declarar o vencedor.');
-          return true;
-        }
-        if (![partidas.STATUS.EM_ANDAMENTO, partidas.STATUS.SALA_LIBERADA].includes(partidaVenc.status)) {
-          await responderErro(interaction, 'Essa partida ainda não está em andamento.');
+        if (!ehMediador(interaction.member)) {
+          await responderErro(interaction, 'Só o mediador pode declarar o vencedor.');
           return true;
         }
         const time = Number(args[1]);
@@ -345,8 +320,6 @@ async function handleBotao(interaction, ctx) {
           partidaId: args[0],
           vencedorTime: time,
           autorId: interaction.user.id,
-          autorTag: interaction.user.tag,
-          canalId: interaction.channelId,
         });
         await responderPrivado(interaction, {
           content: `🏆 **${fluxo.nomeTime(time)}** venceu o AP de ${reais(resultado.partida.preco)}. Resultado salvo!`,
@@ -355,9 +328,8 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'wo': {
-        const partidaWo = partidas.buscar(db, args[0]);
-        if (!podeMediarSala(partidaWo, interaction)) {
-          await responderErro(interaction, 'Só o mediador responsável por esta sala pode aplicar W.O.');
+        if (!ehMediador(interaction.member)) {
+          await responderErro(interaction, 'Só o mediador pode aplicar W.O.');
           return true;
         }
         const ausente = Number(args[1]);
@@ -365,8 +337,6 @@ async function handleBotao(interaction, ctx) {
           partidaId: args[0],
           timeAusente: ausente,
           autorId: interaction.user.id,
-          autorTag: interaction.user.tag,
-          canalId: interaction.channelId,
         });
         await responderPrivado(interaction, {
           content:
@@ -377,23 +347,13 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'cancelar': {
-        const partidaCancelar = partidas.buscar(db, args[0]);
-        const podeCancelar =
-          podeMediarSala(partidaCancelar, interaction) ||
-          (!partidaCancelar?.mediador_id &&
-            mediadores.ehMediador(db, interaction.guildId, interaction.member));
-        if (!podeCancelar) {
-          await responderErro(
-            interaction,
-            'Só o mediador responsável por esta sala (ou um ADM) pode cancelar o AP.',
-          );
+        if (!ehMediador(interaction.member)) {
+          await responderErro(interaction, 'Só a staff pode cancelar um AP.');
           return true;
         }
         await fluxo.cancelarPartida(client, db, {
           partidaId: args[0],
           autorId: interaction.user.id,
-          autorTag: interaction.user.tag,
-          canalId: interaction.channelId,
           motivo: `cancelada por ${interaction.user.tag}`,
         });
         await responderPrivado(interaction, { embeds: [embedSucesso('Sala cancelada e registrada na auditoria.')] });
@@ -486,12 +446,12 @@ async function handleBotao(interaction, ctx) {
           await responderErro(interaction, 'Sala não encontrada.');
           return true;
         }
-        if (!podeMediarSala(partida, interaction)) {
-          await responderErro(interaction, 'Só o mediador responsável por esta sala pode criar a sala do jogo.');
+        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+          await responderErro(interaction, 'Só o mediador desta sala pode criar a sala do jogo.');
           return true;
         }
-        if (!['pago', 'sala_liberada'].includes(partida.status)) {
-          await responderErro(interaction, 'Confirme o pagamento antes de criar a sala do jogo.');
+        if (partida.mediador_id && partida.mediador_id !== interaction.user.id && !ehAdmin(interaction.member)) {
+          await responderErro(interaction, 'Essa sala é de outro mediador.');
           return true;
         }
         try {
@@ -500,11 +460,8 @@ async function handleBotao(interaction, ctx) {
           await auditoria.registrar(db, client, {
             guildId: interaction.guildId,
             autorId: interaction.user.id,
-            autorTag: interaction.user.tag,
-            canalId: interaction.channelId,
             acao: 'Sala do jogo criada',
             detalhe: `Sala ${args[0]} · room ${criada.dados.room_id}`,
-            motivo: criada.reutilizada ? 'Sala já existia (idempotência)' : 'Sala criada na API Nix',
           });
           await responderPrivado(interaction, {
             embeds: [
@@ -643,10 +600,6 @@ async function handleBotao(interaction, ctx) {
     }
   } catch (erro) {
     console.error(`[botoes] erro em ${interaction.customId}:`, erro);
-    require('../util/logs').registrarErro(`botao:${interaction.customId}`, erro, {
-      guildId: interaction.guildId ?? null,
-      canalId: interaction.channelId ?? null,
-    });
     await responderErro(
       interaction,
       erro.message || 'Deu um erro aqui. Tente de novo ou chame um ADM.',

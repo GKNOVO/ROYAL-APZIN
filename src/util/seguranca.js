@@ -40,21 +40,6 @@ function ehSuporte(member) {
   return Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 }
 
-/**
- * A pessoa é o MEDIADOR RESPONSÁVEL por esta partida? (ADM também pode.)
- * Ter o cargo de mediador NÃO basta: quem assumiu a sala é que manda nela.
- */
-function ehMediadorDaPartida(partida, member, userId) {
-  if (!partida) return false;
-  if (ehAdmin(member)) return true;
-  return Boolean(partida.mediador_id) && String(partida.mediador_id) === String(userId ?? member?.id ?? '');
-}
-
-/** A interação está acontecendo no canal privado da partida? */
-function noCanalDaPartida(partida, interaction) {
-  return Boolean(partida) && String(partida.canal_id) === String(interaction?.channelId ?? '');
-}
-
 /** Clique em botão/menu/modal: a primeira resposta já foi consumida pelo ack. */
 function ehComponente(interaction) {
   return Boolean(
@@ -113,17 +98,6 @@ const exigirMediador = (i, mensagem = 'Esse comando é só para mediadores e ADM
 const exigirAdmin = (i, mensagem = 'Esse comando é só para ADMs da ORG Royal AP.') =>
   exigir(i, ehAdmin, mensagem);
 
-/** Exige o mediador que assumiu a partida (ou ADM). Responde e devolve false. */
-async function exigirMediadorDaPartida(
-  interaction,
-  partida,
-  mensagem = 'Só o mediador responsável por esta sala (ou um ADM) pode fazer isso.',
-) {
-  if (ehMediadorDaPartida(partida, interaction.member, interaction.user?.id)) return true;
-  await responderErro(interaction, mensagem);
-  return false;
-}
-
 module.exports = {
   EFEMERO,
   temCargo,
@@ -131,8 +105,6 @@ module.exports = {
   ehMediador,
   ehStaff,
   ehSuporte,
-  ehMediadorDaPartida,
-  noCanalDaPartida,
   ehComponente,
   responder,
   responderPrivado,
@@ -141,5 +113,4 @@ module.exports = {
   exigirStaff,
   exigirMediador,
   exigirAdmin,
-  exigirMediadorDaPartida,
 };

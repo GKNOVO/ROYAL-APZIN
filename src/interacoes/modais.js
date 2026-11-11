@@ -14,14 +14,7 @@ const partidas = require('../servicos/partidas');
 const staff = require('../servicos/staff');
 const mediadores = require('../servicos/mediadores');
 const fluxo = require('../servicos/fluxo');
-const {
-  responderPrivado,
-  responderErro,
-  ehMediador,
-  ehAdmin,
-  ehMediadorDaPartida,
-} = require('../util/seguranca');
-const validacao = require('../util/validacao');
+const { responderPrivado, responderErro, ehMediador, ehAdmin } = require('../util/seguranca');
 const { embedSucesso } = require('../util/embeds');
 
 async function abrirModalRegras(interaction, db, partidaId) {
@@ -52,14 +45,11 @@ async function abrirModalRegras(interaction, db, partidaId) {
 }
 
 async function abrirModalSala(interaction, db, partidaId) {
+  if (!ehMediador(interaction.member)) {
+    return responderErro(interaction, 'Só o mediador pode liberar a criação da sala.');
+  }
   const partida = partidas.buscar(db, partidaId);
   if (!partida) return responderErro(interaction, 'Sala não encontrada.');
-  if (!ehMediadorDaPartida(partida, interaction.member, interaction.user?.id)) {
-    return responderErro(interaction, 'Só o mediador responsável por essa sala pode liberar a criação.');
-  }
-  if (partida.status !== 'pago') {
-    return responderErro(interaction, 'A sala só é liberada depois do pagamento confirmado.');
-  }
 
   const modal = new ModalBuilder()
     .setCustomId(`ap:modalsala:${partidaId}`)
@@ -255,18 +245,19 @@ async function aplicarPix(interaction, db) {
   }
 
   try {
-    // Normaliza e valida cada campo antes de gravar (nada de string gigante).
-    const chave = validacao.chavePix(interaction.fields.getTextInputValue('chave'));
-    const titular = validacao.exigirTexto(interaction.fields.getTextInputValue('titular'), {
-      campo: 'Titular',
-      min: 3,
-      max: 120,
-    });
-    const cidade = validacao.exigirTexto(interaction.fields.getTextInputValue('cidade'), {
-      campo: 'Cidade',
-      min: 2,
-      max: 80,
-    });
+    // Normaliza e limita cada campo antes de gravar (nada de string gigante).
+    const limpar = (valor, max) =>
+      String(valor ?? '')
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
+    const chave = limpar(interaction.fields.getTextInputValue('chave'), 200);
+    const titular = limpar(interaction.fields.getTextInputValue('titular'), 120);
+    const cidade = limpar(interaction.fields.getTextInputValue('cidade'), 80);
+    if (chave.length < 3) throw new Error('A chave PIX precisa ter pelo menos 3 caracteres.');
+    if (titular.length < 3) throw new Error('Informe o nome completo do titular do PIX.');
+    if (cidade.length < 2) throw new Error('Informe a cidade de registro da conta.');
 
     const registro = staff.registrarPix(db, {
       guildId: interaction.guildId,
@@ -313,17 +304,12 @@ async function handleModal(interaction, { db, client }) {
     }
 
     if (tipo === 'modalsala') {
-      const partidaSala = partidas.buscar(db, partidaId);
-      if (!partidaSala) {
-        await responderErro(interaction, 'Sala não encontrada.');
+      if (!ehMediador(interaction.member)) {
+        await responderErro(interaction, 'Só o mediador pode liberar a sala.');
         return true;
       }
-      if (!ehMediadorDaPartida(partidaSala, interaction.member, interaction.user?.id)) {
-        await responderErro(interaction, 'Só o mediador responsável por essa sala pode liberar.');
-        return true;
-      }
-      const salaId = validacao.idSala(interaction.fields.getTextInputValue('sala_id'));
-      const senha = validacao.senhaSala(interaction.fields.getTextInputValue('sala_senha'));
+      const salaId = interaction.fields.getTextInputValue('sala_id');
+      const senha = interaction.fields.getTextInputValue('sala_senha');
       partidas.liberarSala(db, partidaId, { salaId, senha });
       await fluxo.atualizarPartida(client, db, partidaId);
       await responderPrivado(interaction, {
@@ -335,10 +321,6 @@ async function handleModal(interaction, { db, client }) {
     return false;
   } catch (erro) {
     console.error(`[modais] erro em ${interaction.customId}:`, erro);
-    require('../util/logs').registrarErro(`modal:${interaction.customId}`, erro, {
-      guildId: interaction.guildId ?? null,
-      canalId: interaction.channelId ?? null,
-    });
     await responderErro(interaction, erro.message || 'Deu um erro aqui. Tente de novo.');
     return true;
   }

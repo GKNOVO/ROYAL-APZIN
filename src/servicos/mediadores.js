@@ -16,7 +16,6 @@ const {
 } = require('discord.js');
 const config = require('../config');
 const { obterConfig, definirConfig } = require('../db');
-const cache = require('../db/cache');
 const { embed, mencaoCargo } = require('../util/embeds');
 
 const LIMITE_CARGOS = 10;
@@ -35,23 +34,16 @@ const lerJson = (valor) => {
   }
 };
 
-/**
- * Cargos que atuam como mediador/ADM nas filas (banco → .env).
- * Cacheado por 30s: essa lista é lida em TODO clique de painel de partida.
- * `definirConfig` invalida o cache ao salvar, então nunca fica desatualizado.
- */
+/** Cargos que atuam como mediador/ADM nas filas (banco → .env). */
 function cargos(db, guildId) {
-  return cache.lembrar(`cargos:${guildId}`, 30 * 1000, () => {
-    const doBanco = db ? lerJson(obterConfig(db, guildId, 'cargos_mediadores', null)) : null;
-    const lista = doBanco && doBanco.length ? doBanco : padrao();
-    return [...new Set(lista)].slice(0, LIMITE_CARGOS);
-  });
+  const doBanco = db ? lerJson(obterConfig(db, guildId, 'cargos_mediadores', null)) : null;
+  const lista = doBanco && doBanco.length ? doBanco : padrao();
+  return [...new Set(lista)].slice(0, LIMITE_CARGOS);
 }
 
 function definirCargos(db, guildId, ids) {
   const lista = [...new Set((ids || []).map(String).filter(Boolean))].slice(0, LIMITE_CARGOS);
   definirConfig(db, guildId, 'cargos_mediadores', JSON.stringify(lista));
-  cache.invalidar(`cargos:${guildId}`);
   return lista;
 }
 

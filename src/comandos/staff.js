@@ -19,12 +19,10 @@ const {
   exigirMediador,
   ehAdmin,
   ehMediador,
-  ehMediadorDaPartida,
   responderPrivado,
   responderErro,
 } = require('../util/seguranca');
 const { embed, embedSucesso, reais, numeroBR, mencao, dataBR } = require('../util/embeds');
-const validacao = require('../util/validacao');
 
 const DIA = 24 * 60 * 60 * 1000;
 
@@ -44,15 +42,8 @@ const comandos = [
     async executar(interaction, { db, client }) {
       if (!(await exigirStaff(interaction, 'Só staff/mediador com cargo pode registrar PIX.'))) return;
 
-      // Toda entrada de comando passa por validação antes de tocar no banco.
-      const chave = validacao.chavePix(interaction.options.getString('chave'));
-      const titular = interaction.options.getString('titular')
-        ? validacao.exigirTexto(interaction.options.getString('titular'), {
-            campo: 'Titular',
-            min: 3,
-            max: 120,
-          })
-        : null;
+      const chave = interaction.options.getString('chave');
+      const titular = interaction.options.getString('titular');
       const porcento = interaction.options.getNumber('comissao');
       const comissao = porcento === null || porcento === undefined ? undefined : porcento / 100;
 
@@ -67,11 +58,8 @@ const comandos = [
       await auditoria.registrar(db, client, {
         guildId: interaction.guildId,
         autorId: interaction.user.id,
-        autorTag: interaction.user.tag,
-        canalId: interaction.channelId,
         acao: 'PIX de mediador atualizado',
         detalhe: `${mencao(interaction.user.id)} · comissão ${(registro.comissao * 100).toFixed(1)}%`,
-        motivo: 'Cadastro/atualização de chave PIX',
       });
 
       return responderPrivado(interaction, {
@@ -138,11 +126,8 @@ const comandos = [
         );
       }
 
-      if (!ehMediadorDaPartida(partida, interaction.member, interaction.user.id)) {
+      if (partida.mediador_id && partida.mediador_id !== interaction.user.id && !ehAdmin(interaction.member)) {
         return responderErro(interaction, 'Essa sala é de outro mediador.');
-      }
-      if (partida.status !== 'aguardando_pagamento') {
-        return responderErro(interaction, 'Essa sala já passou da etapa de pagamento.');
       }
 
       try {
@@ -155,12 +140,8 @@ const comandos = [
         await auditoria.registrar(db, client, {
           guildId: interaction.guildId,
           autorId: interaction.user.id,
-          autorTag: interaction.user.tag,
-          canalId: partida.canal_id,
           acao: 'PIX enviado na sala',
-          // A auditoria mascara a chave antes de gravar (***.***.***-**).
-          detalhe: `Sala ${partida.id} · chave ${registro.pix_chave}`,
-          motivo: 'Cobrança enviada aos jogadores',
+          detalhe: `Sala ${partida.id} · ${registro.pix_chave}`,
         });
         return responderPrivado(interaction, {
           embeds: [embedSucesso('PIX enviado na sala e na DM dos jogadores. Confira os comprovantes.')],

@@ -91,11 +91,7 @@ const ESQUEMA = [
     criado_em INTEGER NOT NULL,
     pago_em INTEGER,
     liberada_em INTEGER,
-    iniciada_em INTEGER,
-    finalizada_em INTEGER,
-    -- trava de concorrência da criação de sala (idempotência da Nix)
-    sala_lock_em INTEGER,
-    nix_sessao TEXT
+    finalizada_em INTEGER
   )`,
 
   // Jogadores de cada partida (time 1 ou 2)
@@ -144,11 +140,8 @@ const ESQUEMA = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id TEXT,
     autor_id TEXT,
-    autor_tag TEXT,
-    canal_id TEXT,
     acao TEXT NOT NULL,
     detalhe TEXT,
-    motivo TEXT,
     criado_em INTEGER NOT NULL
   )`,
 

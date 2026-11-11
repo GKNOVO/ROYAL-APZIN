@@ -1,33 +1,26 @@
 'use strict';
 
 /**
- * /go — os dois jogadores confirmam que já estão DENTRO da sala do Free Fire.
- *
- * Só funciona no canal privado da partida (aquele criado na hora em que a fila
- * fechou), e só depois que o mediador liberou o ID e a senha da sala.
- * Quando o segundo jogador dá /go, o bot anuncia os 3 segundos e coloca a
- * partida em EM_ANDAMENTO — o estado que libera o resultado no painel.
+ * /go — cada jogador confirma, no canal privado da partida, que já está
+ * DENTRO da sala do Free Fire. No segundo GO o bot avisa os 3 segundos e a
+ * partida passa para EM_ANDAMENTO.
  */
 
 const { SlashCommandBuilder } = require('discord.js');
+const config = require('../config');
 const partidas = require('../servicos/partidas');
 const fluxo = require('../servicos/fluxo');
 const auditoria = require('../servicos/auditoria');
 const { responder, responderErro } = require('../util/seguranca');
-const { embed, mencao, embedSucesso } = require('../util/embeds');
-const config = require('../config');
-const logs = require('../util/logs');
+const { embed, embedSucesso, mencao } = require('../util/embeds');
 
-/** Avisa no canal da partida (público). */
+/** Mensagem pública no canal da partida (nunca quebra o comando se falhar). */
 async function anunciar(canal, conteudo, mencoes = []) {
   if (!canal?.send) return null;
   try {
-    return await canal.send({
-      content: conteudo,
-      allowedMentions: { users: mencoes.map(String) },
-    });
+    return await canal.send({ content: conteudo, allowedMentions: { users: mencoes.map(String) } });
   } catch (erro) {
-    logs.registrarErro('go:anuncio', erro, { canalId: canal?.id ?? null });
+    console.error('[go] não consegui anunciar na sala:', erro.message);
     return null;
   }
 }
@@ -66,14 +59,12 @@ const comandos = [
         client?.channels?.cache?.get?.(partida.canal_id) ||
         (await client?.channels?.fetch?.(partida.canal_id).catch?.(() => null));
 
-      // 1) Mensagem pública exigida pela ORG: quem deu GO.
       await anunciar(
         canal,
         `🎮 O jogador ${mencao(interaction.user.id)} deu GO na sala!  \`${resultado.deram}/${resultado.total}\``,
         [interaction.user.id],
       );
 
-      // 2) Segundo GO: aviso dos 3 segundos e início da partida.
       if (resultado.iniciou) {
         await anunciar(canal, 'Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos.');
         const contagem = await anunciar(canal, '⏳ **3...**');
@@ -83,7 +74,7 @@ const comandos = [
             await contagem?.edit?.('🏁 **Partida iniciada!** Boa sorte aos dois times.');
             await fluxo.atualizarPartida(client, db, partida.id);
           } catch (erro) {
-            logs.registrarErro('go:contagem', erro, { partidaId: partida.id });
+            console.error('[go] contagem:', erro.message);
           }
         }, 3000);
         if (typeof relogio.unref === 'function') relogio.unref();
@@ -91,19 +82,12 @@ const comandos = [
         await auditoria.registrar(db, client, {
           guildId: interaction.guildId,
           autorId: interaction.user.id,
-          autorTag: interaction.user.tag,
-          canalId: interaction.channelId,
           acao: 'Partida iniciada (GO)',
-          detalhe: `Sala ${partida.id} · ${partida.modo} · ${resultado.total} jogadores`,
-          motivo: 'Os dois jogadores confirmaram o GO',
+          detalhe: `Sala ${partida.id} · ${resultado.total} jogadores`,
         });
 
         return responder(interaction, {
-          embeds: [
-            embedSucesso(
-              'Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos. ⏳',
-            ),
-          ],
+          embeds: [embedSucesso('Os dois jogadores estão prontos! A partida irá iniciar em 3 segundos. ⏳')],
         });
       }
 

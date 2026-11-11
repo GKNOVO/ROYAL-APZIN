@@ -220,16 +220,6 @@ function componentesPartida(partida) {
       );
       break;
     case STATUS.SALA_LIBERADA:
-      // Antes do /go dos dois jogadores a partida ainda não começou:
-      // só dá para aplicar W.O. (alguém não entrou) ou cancelar.
-      linhas.push(
-        linha(
-          botao(`ap:wo:${id}:1`, 'W.O. da Equipe 1', '⚠️', ButtonStyle.Secondary),
-          botao(`ap:wo:${id}:2`, 'W.O. da Equipe 2', '⚠️', ButtonStyle.Secondary),
-          botao(`ap:cancelar:${id}`, 'Cancelar', '🚫', ButtonStyle.Danger),
-        ),
-      );
-      break;
     case STATUS.EM_ANDAMENTO:
       linhas.push(
         linha(
@@ -482,51 +472,38 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
 }
 
 /** Finaliza e avisa na sala. */
-async function encerrarPartida(
-  client,
-  db,
-  { partidaId, vencedorTime, autorId, autorTag = null, canalId = null, motivo = 'resultado' },
-) {
-  const resultado = partidas.finalizar(db, { partidaId, vencedorTime, autorId, motivo, canalId });
+async function encerrarPartida(client, db, { partidaId, vencedorTime, autorId, motivo = 'resultado' }) {
+  const resultado = partidas.finalizar(db, { partidaId, vencedorTime, autorId, motivo });
   await atualizarPartida(client, db, partidaId);
   await auditoria.registrar(db, client, {
     guildId: resultado.partida.guild_id,
     autorId,
-    autorTag,
-    canalId: canalId ?? resultado.partida.canal_id,
     acao: motivo === 'wo' ? 'W.O. aplicado' : 'Resultado registrado',
     detalhe: `Sala ${partidaId} · ${nomeTime(vencedorTime)} venceu · ${reais(resultado.partida.preco)}`,
-    motivo: motivo === 'wo' ? 'Time ausente' : 'Resultado informado pelo mediador',
   });
   return resultado;
 }
 
-async function aplicarWO(client, db, { partidaId, timeAusente, autorId, autorTag = null, canalId = null }) {
-  const resultado = partidas.aplicarWO(db, { partidaId, timeAusente, autorId, canalId });
+async function aplicarWO(client, db, { partidaId, timeAusente, autorId }) {
+  const resultado = partidas.aplicarWO(db, { partidaId, timeAusente, autorId });
   await atualizarPartida(client, db, partidaId);
   await auditoria.registrar(db, client, {
     guildId: resultado.partida.guild_id,
     autorId,
-    autorTag,
-    canalId: canalId ?? resultado.partida.canal_id,
     acao: 'W.O. aplicado',
     detalhe: `Sala ${partidaId} · ${nomeTime(timeAusente)} não apareceu · ${reais(resultado.partida.preco)}`,
-    motivo: 'Time ausente',
   });
   return resultado;
 }
 
-async function cancelarPartida(client, db, { partidaId, autorId, autorTag = null, canalId = null, motivo }) {
-  const partida = partidas.cancelar(db, { partidaId, autorId, motivo, canalId });
+async function cancelarPartida(client, db, { partidaId, autorId, motivo }) {
+  const partida = partidas.cancelar(db, { partidaId, autorId, motivo });
   await atualizarPartida(client, db, partidaId);
   await auditoria.registrar(db, client, {
     guildId: partida.guild_id,
     autorId,
-    autorTag,
-    canalId: canalId ?? partida.canal_id,
     acao: 'AP cancelado',
-    detalhe: `Sala ${partidaId} · ${reais(partida.preco)}`,
-    motivo,
+    detalhe: `Sala ${partidaId} · ${motivo}`,
   });
   return partida;
 }

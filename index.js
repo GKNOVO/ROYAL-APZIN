@@ -64,14 +64,6 @@ try {
   process.exit(1);
 }
 
-// Erros de qualquer interação/promise vão para database/erros.log e o processo
-// continua no ar (nada de bot "offline" por causa de uma rejeição perdida).
-require('./src/util/logs').instalarTratadoresGlobais({ db: () => db });
-
-for (const alerta of config.alertasSeguranca()) {
-  console.warn(`⚠️  ${alerta}`);
-}
-
 // 4) Cliente do Discord.
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
