@@ -40,7 +40,7 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 58 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 59 comandos registrados`, está no ar.
 
 ### Banco de dados: nenhum passo extra
 
@@ -75,7 +75,7 @@ serviço não entra mais em timeout.
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 58 comandos registrados
+✅ 59 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -154,6 +154,7 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | `CARGO_SUPORTE_ID` | recomendado | Atende os tickets (não entra nas filas de aposta) | ID do cargo Suporte |
 | `CARGO_AUX_ID` | opcional | Auxiliar do atendimento (também atende tickets) | ID do cargo Auxiliar |
 | `TELAGEM_LINK` | opcional | Link real do Google Meet usado em toda telagem (tem prioridade sobre o provedor) | `https://meet.google.com/abc-defg-hij` |
+| `TELAGEM_LINKS` | opcional | **Pool** de links reais do Meet, separados por vírgula (cada partida reserva um) | `https://meet.google.com/abc-defg-hij,https://meet.google.com/xyz-abcd-efg` |
 | `TELAGEM_PROVEDOR` | opcional | `jitsi` (padrão, sala exclusiva criada na hora) ou `google` (link no formato do Meet) | `jitsi` |
 | `TELAGEM_URL_BASE` | opcional | Servidor do Jitsi (só vale com `TELAGEM_PROVEDOR=jitsi`) | `https://meet.jit.si` |
 | `FREE_FIRE_LINK` | opcional | Link do botão "Abrir Free Fire" na sala liberada | `https://ff.garena.com/` |
@@ -267,6 +268,12 @@ em qualquer canal. O código é **exclusivo por canal/partida** (o mesmo canal s
 mesma sala; canais diferentes nunca dividem a call) e o painel **✅ Sala de Telagem Criada** mostra
 código, plataforma, URL e o botão **Entrar na Call**.
 
+**Pool de links reais do Meet:** cadastre links oficiais com `/telagem_links adicionar`
+(`/telagem_links listar` mostra o pool e as salas em uso) ou informe vários de uma vez em
+`TELAGEM_LINKS`, separados por vírgula. Cada partida **reserva um link ainda livre** e ele fica
+fixo no canal; quando a partida termina, o link volta para o pool. Se todos estiverem em uso, o bot
+avisa para adicionar mais — nenhuma partida divide a call com outra.
+
 Provedores (`TELAGEM_PROVEDOR`):
 
 - `jitsi` (padrão): `https://meet.jit.si/royal-ap-<código>` — a sala é criada **na hora** em que o
@@ -303,7 +310,7 @@ posição no ranking, total apostado e prêmios. Quem vence ganha **+1 vitória*
 
 ---
 
-## 6. Comandos (58)
+## 6. Comandos (59)
 
 **Painéis de AP (15)** — publicam o painel no canal atual (cards de R$ 0,50 a R$ 100,00):
 
@@ -355,6 +362,7 @@ Discord, sem abrir o Developer Portal.
 | `/pix` | Envia sua chave PIX — funciona em qualquer canal do servidor |
 | `/painel_mediador` | Painel de controle da moderação |
 | `/criar_telagem [link:]` | Telagem exclusiva do canal; exige cargo de mediador/ADM |
+| `/telagem_links adicionar\|remover\|listar\|limpar` | Gerencia o pool de links reais do Google Meet (só ADM) |
 | `/mediadores` | Módulo de configuração: cargos, canal do plantão e canal do PIX (só ADM) |
 | `/painel_mediadores tipo:fila\|registro` | Publica e fixa o painel de plantão ou o de PIX (só ADM) |
 | `/vencedor time: [partida:]` | Declara o vencedor e fecha a aposta |

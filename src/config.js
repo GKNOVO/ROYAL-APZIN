@@ -177,6 +177,8 @@ const config = {
    *  • TELAGEM_URL_BASE        → base usada quando não há link fixo; gera no formato oficial
    */
   TELAGEM_LINK: texto(process.env.TELAGEM_LINK),
+  /** Pool de links reais do Meet (separados por vírgula ou quebra de linha). */
+  TELAGEM_LINKS: texto(process.env.TELAGEM_LINKS),
   /** jitsi (padrão, sala exclusiva criada na hora) ou google (Meet). */
   TELAGEM_PROVEDOR: texto(process.env.TELAGEM_PROVEDOR, 'jitsi').toLowerCase(),
   /** Servidor do Jitsi (só usado quando o provedor é jitsi). */

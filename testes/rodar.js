@@ -203,10 +203,10 @@ function resposta(interaction) {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((linha) => linha.name);
-    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao']) {
+    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao', 'telagem_links', 'telagens']) {
       assert.ok(tabelas.includes(esperada), `faltou a tabela ${esperada}`);
     }
-    passar('banco: 14 tabelas criadas automaticamente');
+    passar('banco: 16 tabelas criadas automaticamente');
   }
 
   // ---------- usuários e economia ----------
@@ -811,6 +811,58 @@ function resposta(interaction) {
     );
     passar('telagem: link do Google Meet validado (fixo ou colado no comando)');
 
+    // Pool de links REAIS do Meet: exclusivo por partida e com liberação automática
+    const linksAntes = config.TELAGEM_LINKS;
+    config.TELAGEM_LINKS =
+      'https://meet.google.com/aaa-bbbb-ccc, link-invalido ,https://meet.google.com/ddd-eeee-fff';
+    assert.deepStrictEqual(telagem.pool(db, 'g-pool'), [
+      'https://meet.google.com/aaa-bbbb-ccc',
+      'https://meet.google.com/ddd-eeee-fff',
+    ]);
+
+    const poolA = partidas.criar(db, {
+      guildId: 'g-pool',
+      modo: 'x1mobile',
+      preco: 100,
+      gelo: 'normal',
+      canalId: 'pool-canal-a',
+      jogadores: [{ userId: 'q1', time: 1 }, { userId: 'q2', time: 2 }],
+    });
+    const poolB = partidas.criar(db, {
+      guildId: 'g-pool',
+      modo: 'x1mobile',
+      preco: 100,
+      gelo: 'normal',
+      canalId: 'pool-canal-b',
+      jogadores: [{ userId: 'q3', time: 1 }, { userId: 'q4', time: 2 }],
+    });
+
+    const reservaA = telagem.reservar(db, 'g-pool', `partida:${poolA.id}`);
+    const reservaB = telagem.reservar(db, 'g-pool', `partida:${poolB.id}`);
+    assert.ok(reservaA.url.startsWith('https://meet.google.com/'));
+    assert.notStrictEqual(reservaA.url, reservaB.url, 'cada partida recebe um link diferente');
+    assert.strictEqual(
+      telagem.reservar(db, 'g-pool', `partida:${poolA.id}`).url,
+      reservaA.url,
+      'a mesma partida mantém o mesmo link',
+    );
+    assert.throws(() => telagem.reservar(db, 'g-pool', 'partida:inexistente'), /Google Meet/);
+
+    // Partida finalizada devolve o link para o pool
+    db.prepare("UPDATE partidas SET status = 'finalizada' WHERE id = ?").run(poolA.id);
+    const reaproveitado = telagem.reservar(db, 'g-pool', 'canal:novo-canal');
+    assert.strictEqual(reaproveitado.url, reservaA.url, 'link de partida encerrada volta a ser usado');
+
+    assert.strictEqual(
+      telagem.adicionarLink(db, 'g-pool', 'https://meet.google.com/ggg-hhhh-iii'),
+      'https://meet.google.com/ggg-hhhh-iii',
+    );
+    assert.ok(telagem.pool(db, 'g-pool').includes('https://meet.google.com/ggg-hhhh-iii'));
+    assert.strictEqual(telagem.removerLink(db, 'g-pool', 'https://meet.google.com/ggg-hhhh-iii'), 1);
+    telagem.limparLinks(db, 'g-pool');
+    config.TELAGEM_LINKS = linksAntes;
+    passar('telagem: pool do Meet exclusivo por sala, com gestão e liberação automática');
+
     // /criar_telagem dentro da sala da partida
     const { client: clientTelagem, guild: guildTelagem } = ambienteFalso();
     const salaTelagem = await guildTelagem.channels.create({ name: 'fila-gelo-normal-050' });
@@ -861,6 +913,44 @@ function resposta(interaction) {
     assert.strictEqual(canalAvulso.enviadas.length, 1, 'nada publicado sem cargo');
     assert.ok(resposta(semCargoTelagem).embeds[0].toJSON().description.includes('cargos'));
     passar('/criar_telagem: bloqueia quem não tem cargo de mediador/ADM');
+
+    // /criar_telagem reserva um link real do Meet por canal (pool)
+    const { client: clientMeet, guild: guildMeet } = ambienteFalso();
+    const meetA = await guildMeet.channels.create({ name: 'call-a' });
+    const meetB = await guildMeet.channels.create({ name: 'call-b' });
+    const poolAntes = config.TELAGEM_LINKS;
+    config.TELAGEM_LINKS = 'https://meet.google.com/aaa-bbbb-ccc,https://meet.google.com/ddd-eeee-fff';
+
+    const rodarTelagem = async (canal) => {
+      const interacao = fakeInteraction({
+        commandName: 'criar_telagem',
+        userId: 'adm-meet',
+        guildId: guildMeet.id,
+        channel: canal,
+        channelId: canal.id,
+        roles: ['cargo-med'],
+        perms: [PermissionsBitField.Flags.Administrator],
+      });
+      await comandos.executar(interacao, { db, client: clientMeet });
+      return interacao;
+    };
+
+    await rodarTelagem(meetA);
+    await rodarTelagem(meetB);
+    const urlA = meetA.enviadas[0].payload.components[0].toJSON().components[0].url;
+    const urlB = meetB.enviadas[0].payload.components[0].toJSON().components[0].url;
+    assert.ok(urlA.startsWith('https://meet.google.com/'), urlA);
+    assert.notStrictEqual(urlA, urlB, 'canais diferentes recebem links diferentes');
+
+    await rodarTelagem(meetA);
+    assert.strictEqual(
+      meetA.enviadas[1].payload.components[0].toJSON().components[0].url,
+      urlA,
+      'o mesmo canal mantém o link reservado',
+    );
+    config.TELAGEM_LINKS = poolAntes;
+    telagem.limparLinks(db, guildMeet.id);
+    passar('/criar_telagem: pool do Meet fixa um link exclusivo por canal');
 
     // /verp
     const verp = fakeInteraction({ commandName: 'verp', options: { usuario: { id: 'u1', username: 'u1' } } });
@@ -934,7 +1024,7 @@ function resposta(interaction) {
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
       'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
       'criar_telagem', 'verp', 'mediadores', 'painel_mediadores',
-      'anunciar2', 'conectarbotcall', 'tirarbotcall',
+      'anunciar2', 'conectarbotcall', 'tirarbotcall', 'telagem_links',
     ];
     for (const nome of obrigatorios) {
       assert.ok(nomes.includes(nome), `faltou o comando /${nome}`);
@@ -943,9 +1033,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 58);
-    assert.strictEqual(new Set(nomes).size, 58, 'nome de comando repetido');
-    passar('comandos: 58 registrados (43 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 59);
+    assert.strictEqual(new Set(nomes).size, 59, 'nome de comando repetido');
+    passar('comandos: 59 registrados (44 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(

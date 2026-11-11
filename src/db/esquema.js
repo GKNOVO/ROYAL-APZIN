@@ -172,7 +172,26 @@ const ESQUEMA = [
     criado_em INTEGER NOT NULL
   )`,
 
+  // Pool de links REAIS do Google Meet (cadastrados por /telagem_links)
+  `CREATE TABLE IF NOT EXISTS telagem_links (
+    guild_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    criado_em INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, url)
+  )`,
+
+  // Reserva do link de cada partida/canal (nunca repete entre salas ativas)
+  `CREATE TABLE IF NOT EXISTS telagens (
+    guild_id TEXT NOT NULL,
+    chave TEXT NOT NULL,
+    codigo TEXT,
+    url TEXT NOT NULL,
+    criado_em INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, chave)
+  )`,
+
   `CREATE INDEX IF NOT EXISTS idx_filas_grupo ON filas (guild_id, modo, preco, gelo, entrou_em)`,
+  `CREATE INDEX IF NOT EXISTS idx_telagens_url ON telagens (guild_id, url)`,
   `CREATE INDEX IF NOT EXISTS idx_partidas_canal ON partidas (guild_id, canal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_partidas_status ON partidas (guild_id, status)`,
   `CREATE INDEX IF NOT EXISTS idx_transacoes_user ON transacoes (guild_id, user_id, criado_em)`,

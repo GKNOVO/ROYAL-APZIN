@@ -21,6 +21,7 @@ const modulos = [
   require('./botperfil'),
   require('./mediadores'),
   require('./telagem'),
+  require('./telagem_links'),
   require('./voz'),
   require('./verp'),
   require('./nix'),

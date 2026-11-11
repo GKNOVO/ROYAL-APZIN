@@ -3,9 +3,11 @@
 /**
  * /criar_telagem — abre a sala de call exclusiva do canal/partida.
  *
- * • Código único por canal (a mesma partida sempre reaproveita a mesma sala).
+ * • Reserva um link REAL do Google Meet do pool (TELAGEM_LINKS + /telagem_links).
+ *   O mesmo canal/partida sempre recebe o mesmo link; canais diferentes nunca
+ *   dividem a call.
  * • Restrito a quem tem um dos CARGOS configurados no /mediadores (Mediador/ADM).
- * • Funciona em qualquer canal; dentro da sala da partida o painel é vinculado a ela.
+ * • `link:` fixa um Meet específico para aquela partida.
  */
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -19,11 +21,11 @@ const comandos = [
   {
     data: new SlashCommandBuilder()
       .setName('criar_telagem')
-      .setDescription('Cria a sala de telagem (call exclusiva do canal) e publica o painel')
+      .setDescription('Cria a telagem do canal com um link exclusivo do Google Meet')
       .addStringOption((opcao) =>
         opcao
           .setName('link')
-          .setDescription('Link real do Google Meet (vazio = sala exclusiva gerada pelo bot)'),
+          .setDescription('Link real do Meet para esta partida (vazio = pega um do pool)'),
       ),
 
     async executar(interaction, { db }) {
@@ -41,28 +43,47 @@ const comandos = [
 
       // Link opcional: só aceita meet.google.com (evita link estranho no botão).
       const informado = interaction.options.getString('link');
-      const url = informado ? telagem.linkValido(informado) : null;
-      if (informado && !url) {
+      if (informado && !telagem.linkValido(informado)) {
         return responderErro(
           interaction,
-          'Link inválido. Cole um link do Google Meet, ex: `https://meet.google.com/abc-defg-hij`.',
+          'Link inválido. Cole um link real do Google Meet, ex: `https://meet.google.com/abc-defg-hij`.',
         );
       }
 
       const partida = partidas.porCanal(db, interaction.guildId, interaction.channelId);
 
-      // Código exclusivo e estável deste canal/partida (não é aleatório global).
-      const codigo = telagem.codigoDoCanal(interaction.guildId, partida?.id || interaction.channelId);
-      await canal.send(telagem.painel(codigo, { url }));
+      // Cada partida tem sua chave; fora de partida a chave é o próprio canal.
+      const chave = partida ? `partida:${partida.id}` : `canal:${interaction.channelId}`;
+
+      let sala;
+      try {
+        sala = informado
+          ? telagem.fixar(db, interaction.guildId, chave, informado)
+          : telagem.reservar(db, interaction.guildId, chave);
+      } catch (erro) {
+        return responderErro(interaction, erro.message);
+      }
+
+      // Pool vazio e sem link informado: usa o provedor padrão (nunca fica sem sala).
+      const codigo = sala?.codigo || telagem.codigoDoCanal(interaction.guildId, chave);
+      const url = sala?.url || null;
+
+      await canal.send(telagem.painel(codigo, { url, origem: sala?.origem || null }));
 
       const destino = telagem.link(codigo, { url });
+      const deOnde = sala?.origem === 'pool' || sala?.origem === 'reservado'
+        ? 'link exclusivo do pool do Meet'
+        : sala?.origem === 'manual'
+          ? 'link informado no comando'
+          : 'sala gerada (configure o pool do Meet com /telagem_links)';
+
       return responderPrivado(interaction, {
         embeds: [
           embedSucesso(
-            (partida
-              ? `Sala de telagem criada para a partida \`${partida.id}\`.`
-              : `Sala de telagem criada para este canal.`) +
-              `\n**Código:** \`${codigo}\`\n**Link exclusivo:** ${destino}`,
+            (partida ? `Sala de telagem criada para a partida \`${partida.id}\`.` : 'Sala de telagem criada para este canal.') +
+              `\n**Código:** \`${codigo}\`` +
+              `\n**Link:** ${destino}` +
+              `\n**Origem:** ${deOnde}`,
           ),
         ],
       });
