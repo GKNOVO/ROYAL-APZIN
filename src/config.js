@@ -158,16 +158,6 @@ const config = {
    */
   CATEGORIA_FILAS_ID: texto(process.env.CATEGORIA_FILAS_ID) || texto(process.env.CATEGORY_FILAS_ID),
 
-  /**
-   * ONDE OS TICKETS NASCEM — sempre uma CATEGORIA.
-   * A ordem de prioridade está em src/servicos/tickets.js.
-   */
-  CATEGORY_TICKETS_ID: texto(process.env.CATEGORY_TICKETS_ID),
-  TICKET_CATEGORIA_ID: texto(process.env.TICKET_CATEGORIA_ID),
-  /** Nome alternativo da mesma configuração (compatibilidade). */
-  TICKET_DESTINO_ID: texto(process.env.TICKET_DESTINO_ID),
-  /** Nome antigo da mesma variável — continua aceito para não quebrar .env já existente. */
-  CATEGORIA_SUPORTE_ID: texto(process.env.CATEGORIA_SUPORTE_ID) || texto(process.env.CATEGORY_TICKETS_ID),
 
   /** Nix FF · API de salas automáticas (a chave NUNCA vai para o Discord). */
   NIX_API_KEY: texto(process.env.NIX_API_KEY) || texto(process.env.NIX_TOKEN),
@@ -176,9 +166,6 @@ const config = {
   CARGO_ADMIN_ID: texto(process.env.CARGO_ADMIN_ID),
   CARGO_STAFF_ID: texto(process.env.CARGO_STAFF_ID),
   CARGO_MEDIADOR_ID: texto(process.env.CARGO_MEDIADOR_ID),
-  /** Cargos do atendimento (tickets) — não atuam nas filas de aposta. */
-  CARGO_SUPORTE_ID: texto(process.env.CARGO_SUPORTE_ID),
-  CARGO_AUX_ID: texto(process.env.CARGO_AUX_ID),
   CANAL_LOGS_ID: texto(process.env.CANAL_LOGS_ID),
 
   /**

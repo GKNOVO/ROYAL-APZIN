@@ -34,12 +34,6 @@ function ehStaff(member) {
   return Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 }
 
-/** Atendimento de tickets: só Suporte/Auxiliar (e quem gerencia o servidor). */
-function ehSuporte(member) {
-  if (temCargo(member, config.CARGO_SUPORTE_ID) || temCargo(member, config.CARGO_AUX_ID)) return true;
-  return Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
-}
-
 /** Clique em botão/menu/modal: a primeira resposta já foi consumida pelo ack. */
 function ehComponente(interaction) {
   return Boolean(
@@ -104,7 +98,6 @@ module.exports = {
   ehAdmin,
   ehMediador,
   ehStaff,
-  ehSuporte,
   ehComponente,
   responder,
   responderPrivado,

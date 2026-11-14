@@ -12,6 +12,7 @@ const { handleSelect } = require('../interacoes/selects');
 const { handleModal } = require('../interacoes/modais');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
+const royalSupabase = require('../servicos/royalSupabase');
 const { registrarComandos } = require('../servicos/registroComandos');
 const membros = require('./membros');
 const { embedErro } = require('../util/embeds');
@@ -134,6 +135,20 @@ function montar(client, db) {
             convidadoId: membro.id,
             codigo,
           });
+          await royalSupabase.registrarInvite({
+            guildId: guild.id,
+            invitedUserId: membro.id,
+            inviterUserId: convite.inviter.id,
+            code: codigo,
+          }).catch((erro) => console.error('[convites] Supabase:', erro.message));
+          await royalSupabase.auditar({
+            guildId: guild.id,
+            actorId: convite.inviter.id,
+            action: 'member.join',
+            entityType: 'invite',
+            entityId: membro.id,
+            detail: `convite ${codigo}`,
+          }).catch(() => {});
         }
       }
     } catch (erro) {

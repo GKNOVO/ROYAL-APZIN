@@ -19,7 +19,7 @@ function registrar(db, { guildId, convidadorId, convidadoId, codigo = null }) {
   db.prepare(
     `INSERT OR IGNORE INTO convites (guild_id, convidador_id, convidado_id, codigo, criado_em)
      VALUES (?, ?, ?, ?, ?)`,
-  ).run(String(guildId), String(convidadoId), String(convidadorId), codigo, agora());
+  ).run(String(guildId), String(convidadorId), String(convidadoId), codigo, agora());
 }
 
 /** Chamado quando alguém entra: devolve o código usado (ou null). */

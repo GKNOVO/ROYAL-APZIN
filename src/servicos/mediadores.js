@@ -66,10 +66,6 @@ const limparFilaAuto = (db, guildId) => obterConfig(db, guildId, 'limpar_fila_au
 const definirLimparFilaAuto = (db, guildId, ativo) =>
   definirConfig(db, guildId, 'limpar_fila_auto', ativo ? '1' : '0');
 
-/** Cargos do atendimento (tickets) — separados dos mediadores. */
-function cargosSuporte() {
-  return [config.CARGO_SUPORTE_ID, config.CARGO_AUX_ID].filter(Boolean);
-}
 
 /**
  * Tem algum dos CARGOS configurados para mediação?
@@ -174,7 +170,6 @@ module.exports = {
   definirModo,
   limparFilaAuto,
   definirLimparFilaAuto,
-  cargosSuporte,
   AVISO_CARGO,
   podeUsarSalas,
   temCargoMediador,

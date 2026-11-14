@@ -14,7 +14,6 @@ const { obterConfig, definirConfig } = require('../db');
 const filas = require('../servicos/filas');
 const partidas = require('../servicos/partidas');
 const paineis = require('../servicos/paineis');
-const tickets = require('../servicos/tickets');
 const { exigirStaff, exigirAdmin, responderPrivado, responderErro } = require('../util/seguranca');
 const { embed, embedSucesso, dataBR } = require('../util/embeds');
 
@@ -38,10 +37,9 @@ const comandos = [
         '',
         '**Mediação:** `/mediadores` (configuração) · `/painel_mediadores` (plantão/PIX) · `/criar_telagem`',
         '**Placar:** `/verp @jogador`',
-        '**Jogador:** `/perfil` · `/verp` · `/ranking` · `/apostas` · `/convites` · `/ticket`',
+        '**Jogador:** `/perfil` · `/verp` · `/ranking` · `/apostas` · `/convites` · `/roleta` · `/lojinha` · `/inventario`',
         '**Staff:** `/painel_mediador` · `/registrar_pix` · `/pix` · `/vencedor` · `/wo` · `/receita_mediadores` · `/analista`',
-        '**Configuração:** `/boombot setticket` (categoria dos tickets) · `/boombot setcategoria` (categoria das filas) · `/boombot setlog`',
-        '**Atendimento:** `/ticket` (painel temporário, 15s) · `/ticketfixo` (painel fixo, só ADM)',
+        '**Configuração:** `/boombot setcategoria` (categoria das filas) · `/boombot setlog`',
         '**Nix FF (salas automáticas):** `/nix status` · `/nix criarsala` · `/nix iniciar` · `/nix statussala` · `/nix resultado`',
         '**ADM:** `/painel` · `/anunciar` · `/logs` · `/limpar` · `/blacklist` · `/loja` · `/envio_massa` · `/boombot` · `/botperfil`',
       ].join('\n');
@@ -88,81 +86,6 @@ const comandos = [
 
   {
     data: new SlashCommandBuilder()
-      .setName('aux')
-      .setDescription('Atalho reservado — o atendimento agora é pelo /ticket'),
-
-    async executar(interaction) {
-      // A abertura direta foi desativada de propósito. A função continua guardada
-      // em servicos/tickets.js (abrirTicket) para quando precisar de novo.
-      return responderPrivado(interaction, {
-        content: 'Use o comando `/ticket` para abrir a Central de Atendimento.',
-      });
-    },
-  },
-
-  {
-    data: new SlashCommandBuilder()
-      .setName('ticket')
-      .setDescription('Abre a Central de Atendimento (painel temporário, só você vê)'),
-
-    async executar(interaction) {
-      await responderPrivado(interaction, {
-        embeds: [tickets.embedCentral()],
-        components: tickets.componentesCentral(),
-      });
-
-      // O painel se apaga sozinho em 15 segundos para não poluir o canal.
-      const expira = setTimeout(() => {
-        // deleteReply nem sempre existe (interação antiga): nunca deixa erro solto.
-        Promise.resolve()
-          .then(() => interaction.deleteReply())
-          .catch(() => {});
-      }, 15000);
-      if (typeof expira.unref === 'function') expira.unref();
-      interaction.__expiraTicket = expira;
-    },
-  },
-
-  {
-    data: new SlashCommandBuilder()
-      .setName('ticketfixo')
-      .setDescription('Publica a Central de Atendimento permanente no canal (só ADM)')
-      .addChannelOption((opcao) =>
-        opcao
-          .setName('canal')
-          .setDescription('Canal onde publicar (vazio = este canal)')
-          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement),
-      ),
-
-    async executar(interaction) {
-      if (!(await exigirAdmin(interaction, 'Só ADM/Gerente pode publicar a Central de Atendimento fixa.'))) return;
-
-      const escolhido = interaction.options.getChannel('canal');
-      const canal = escolhido ?? interaction.channel;
-      if (!canal?.isTextBased?.()) {
-        return responderErro(interaction, 'Use esse comando em um canal de texto.');
-      }
-
-      const mensagem = await canal.send({
-        embeds: [tickets.embedCentral()],
-        components: tickets.componentesCentral(),
-      });
-      if (typeof mensagem.pin === 'function') await mensagem.pin().catch(() => {});
-
-      return responderPrivado(interaction, {
-        embeds: [
-          embedSucesso(
-            `Central de Atendimento publicada e fixada em ${canal}.\n` +
-              '_Lembre: os tickets nascem dentro da categoria definida com `/boombot setticket`_ ' +
-              '_(ou `CATEGORY_TICKETS_ID` no .env). O jogador só vê o aviso temporário dele._',
-          ),
-        ],
-      });
-    },
-  },
-
-  {
-    data: new SlashCommandBuilder()
       .setName('boombot')
       .setDescription('Status e configurações do bot')
       .addSubcommand((sub) => sub.setName('status').setDescription('Mostra a saúde do bot'))
@@ -180,18 +103,6 @@ const comandos = [
             o
               .setName('categoria')
               .setDescription('Categoria onde as salas serão criadas')
-              .setRequired(true)
-              .addChannelTypes(ChannelType.GuildCategory),
-          ),
-      )
-      .addSubcommand((sub) =>
-        sub
-          .setName('setticket')
-          .setDescription('Define a CATEGORIA onde os tickets são criados')
-          .addChannelOption((o) =>
-            o
-              .setName('destino')
-              .setDescription('Categoria de atendimento')
               .setRequired(true)
               .addChannelTypes(ChannelType.GuildCategory),
           ),
@@ -236,18 +147,6 @@ const comandos = [
         return responderPrivado(interaction, { content: `✅ Canal de logs: ${canal}.` });
       }
 
-      if (sub === 'setticket') {
-        const destino = interaction.options.getChannel('destino');
-        definirConfig(db, interaction.guildId, 'categoria_tickets', destino.id);
-        return responderPrivado(interaction, {
-          embeds: [
-            embedSucesso(
-              `Tickets configurados para a categoria **${destino.name}**.\n` +
-                'Todo ticket novo nasce dentro dela — e nenhuma mensagem é enviada no chat.',
-            ),
-          ],
-        });
-      }
 
       const categoria = interaction.options.getChannel('categoria');
       definirConfig(db, interaction.guildId, 'categoria_filas', categoria.id);
@@ -323,7 +222,7 @@ const comandos = [
               '• Print do placar final enviado na sala do AP.',
               '• Estar no mesmo servidor/região combinada (Brasil).',
               '',
-              '_Suspeita de emulador = W.O. imediato, com print anexado no ticket._',
+              '_Suspeita de emulador = W.O. imediato, com print enviado para a staff._',
             ].join('\n'),
             { cor: config.CORES.gelo, rodape: 'ORG Royal AP' },
           ),
@@ -375,7 +274,7 @@ const comandos = [
               '3. Feche macros/scripts e reinicie o emulador.',
               '4. Deixe a gravação pronta antes do AP começar.',
               '',
-              '**Travou no meio do AP?** Abra um ticket imediatamente com print — sem print, vale W.O.',
+              '**Travou no meio do AP?** Avise a staff imediatamente com print — sem print, vale W.O.',
             ].join('\n'),
             { cor: config.CORES.neutro, rodape: 'ORG Royal AP' },
           ),

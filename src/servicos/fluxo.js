@@ -276,7 +276,7 @@ async function criarCanalPartida(client, db, guild, { modo, preco, gelo, jogador
       allow: [A.ViewChannel, A.SendMessages, A.ReadMessageHistory, A.EmbedLinks],
     })),
   ];
-  // Só mediadores e ADM veem a sala de aposta (suporte atende apenas tickets).
+  // Só mediadores e ADM veem a sala de aposta.
   for (const cargo of mediadores.mencoes(db, guild.id)) {
     permissoes.push({
       id: cargo,

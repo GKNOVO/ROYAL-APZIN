@@ -1,19 +1,19 @@
 'use strict';
 
-/** Cliques em botões: fila, gelo, regras, mediação, PIX, resultado e tickets. */
+/** Cliques em botões: fila, gelo, regras, mediação, PIX, resultado. */
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ButtonStyle } = require('discord.js');
 const config = require('../config');
 const fluxo = require('../servicos/fluxo');
 const partidas = require('../servicos/partidas');
 const staff = require('../servicos/staff');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
-const tickets = require('../servicos/tickets');
 const plantao = require('../servicos/plantao');
 const salas = require('../servicos/salas');
 const mediadores = require('../servicos/mediadores');
 const auditoria = require('../servicos/auditoria');
+const royalSupabase = require('../servicos/royalSupabase');
 const { embed, embedSucesso, embedErro, reais, mencao, mencaoCargo, dataBR } = require('../util/embeds');
 const {
   responderPrivado,
@@ -21,7 +21,6 @@ const {
   ehMediador,
   ehAdmin,
   ehStaff,
-  ehSuporte,
 } = require('../util/seguranca');
 
 const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
@@ -36,7 +35,7 @@ async function avisarConfirmacao(client, db, { partida, userId, completo, faltan
       client?.channels?.cache?.get?.(partida.canal_id) || (await client?.channels?.fetch?.(partida.canal_id));
     if (!canal?.send) return;
 
-    // Só mediadores e ADM são marcados nas partidas (suporte fica nos tickets).
+    // Só mediadores e ADM são marcados nas partidas (suporte fica no atendimento externo).
     const cargos = mediadores.mencoes(db, partida.guild_id);
     const marcaStaff = cargos.length ? `\n${cargos.map((id) => mencaoCargo(id)).join(' ')}` : '';
     const restantes =
@@ -251,17 +250,6 @@ async function fecharSala(interaction, { db, client }, partidaId) {
   return true;
 }
 
-/** Botão "Ignorar mensagem" que acompanha o aviso efêmero do ticket. */
-function linhaIgnorar() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ap:ignorarticket')
-      .setLabel('Ignorar mensagem')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Secondary),
-  );
-}
-
 async function handleBotao(interaction, ctx) {
   const partes = String(interaction.customId || '').split(':');
   if (partes[0] !== 'ap') return false;
@@ -292,6 +280,16 @@ async function handleBotao(interaction, ctx) {
       case 'gelo':
         await entrarNaFilaBotao(interaction, ctx, args[0], args[1], args[2]);
         return true;
+
+      case 'roletagirar': {
+        try {
+          const resultado = await royalSupabase.girar({ guildId: interaction.guildId, userId: interaction.user.id, request: interaction.id });
+          await responderPrivado(interaction, { content: `🎰 Você ganhou **${resultado.prize_name}**! Recompensa: **${resultado.reward_type} · ${resultado.reward_value}**` });
+        } catch (erro) {
+          await responderErro(interaction, erro.message);
+        }
+        return true;
+      }
 
       case 'sair':
         await sairDaFila(interaction, ctx, args[0], args[1]);
@@ -579,62 +577,11 @@ async function handleBotao(interaction, ctx) {
                 '4. Um jogador envia a regra e **todos** confirmam.\n' +
                 '5. O mediador assume, manda o PIX e confere o pagamento.\n' +
                 '6. Sala liberada → joguem → mediador declara o vencedor.\n\n' +
-                'Dúvida? Use `/ticket` para falar com a staff.',
+                'Dúvida? Use a staff pelos canais oficiais.',
               { rodape: 'ORG Royal AP' },
             ),
           ],
         });
-        return true;
-      }
-
-      case 'central':
-      case 'aux': {
-        await responderPrivado(interaction, {
-          embeds: [tickets.embedCentral()],
-          components: tickets.componentesCentral(),
-        });
-        return true;
-      }
-
-      case 'ticket': {
-        try {
-          const aberto = await tickets.abrirTicket(interaction, { db, client, tipo: args[0] });
-          // Resposta estritamente efêmera: nada é publicado no chat geral.
-          await responderPrivado(interaction, {
-            content: aberto.existente
-              ? `🎫 Seu ticket já está aberto: ${aberto.link}\nContinue o atendimento por lá.`
-              : `✅ Seu ticket foi criado com sucesso! Acesse: ${aberto.link}\n\n_A staff já foi avisada na sala. Ninguém mais vê esta mensagem._`,
-            components: [linhaIgnorar()],
-          });
-        } catch (erro) {
-          console.error('[botoes] ticket:', erro.message);
-          await responderErro(
-            interaction,
-            '❌ Não consegui abrir o ticket. Chame um ADM (confira a categoria de tickets e a permissão **Gerenciar Canais**).',
-          ).catch(() => {});
-        }
-        return true;
-      }
-
-      case 'ignorarticket': {
-        // Some com o aviso temporário só na tela de quem clicou.
-        try {
-          await interaction.deleteReply();
-        } catch (erro) {
-          await interaction
-            .editReply({ content: '✅ Aviso dispensado.', embeds: [], components: [] })
-            .catch(() => console.warn('[botoes] não consegui apagar o aviso temporário:', erro.message));
-        }
-        return true;
-      }
-
-      case 'fecharticket': {
-        if (!ehSuporte(interaction.member)) {
-          await responderErro(interaction, 'Só o atendimento (Suporte/Auxiliar) pode fechar o ticket.');
-          return true;
-        }
-        await responderPrivado(interaction, { content: '🔒 Fechando o ticket em 5 segundos...' });
-        setTimeout(() => interaction.channel?.delete('Ticket encerrado').catch(() => {}), 5000);
         return true;
       }
 

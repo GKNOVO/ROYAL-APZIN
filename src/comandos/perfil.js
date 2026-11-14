@@ -8,6 +8,7 @@ const usuarios = require('../servicos/usuarios');
 const staff = require('../servicos/staff');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
+const royalSupabase = require('../servicos/royalSupabase');
 const { responderPrivado, responder } = require('../util/seguranca');
 const { embed, reais, numeroBR, dataBR, mencao } = require('../util/embeds');
 
@@ -84,20 +85,24 @@ const comandos = [
             { name: 'Vitórias', value: 'vitorias' },
             { name: `${config.MOEDA}`, value: 'coins' },
             { name: 'Giros', value: 'giros' },
+            { name: 'Invites', value: 'invites' },
           ),
       ),
 
     async executar(interaction, { db }) {
       const tipo = interaction.options.getString('tipo') ?? 'vitorias';
-      const lista = usuarios.top(db, interaction.guildId, tipo, config.LIMITES.RANKING);
+      const lista = tipo === 'invites' && config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY
+        ? await royalSupabase.rankingConvites(interaction.guildId, config.LIMITES.RANKING)
+        : usuarios.top(db, interaction.guildId, tipo, config.LIMITES.RANKING);
       const medalhas = ['🥇', '🥈', '🥉'];
 
       const corpo = lista.length
         ? lista
             .map((linha, indice) => {
               const posicao = medalhas[indice] ?? `**${indice + 1}.**`;
-              const valor =
-                tipo === 'coins'
+              const valor = tipo === 'invites'
+                  ? `${numeroBR(linha.total)} convite(s)`
+                  : tipo === 'coins'
                   ? `${numeroBR(linha.coins)} ${config.MOEDA}`
                   : tipo === 'giros'
                     ? `${numeroBR(linha.giros)} giros`
@@ -106,8 +111,7 @@ const comandos = [
             })
             .join('\n')
         : 'Ainda não tem ninguém no ranking. Publiquem os painéis e comecem os APs!';
-      const titulo =
-        tipo === 'coins' ? '💰 Ranking de moedas' : tipo === 'giros' ? '🎰 Ranking de giros' : '🏆 Ranking de vitórias';
+      const titulo = tipo === 'invites' ? '📨 Ranking de invites' : tipo === 'coins' ? '💰 Ranking de moedas' : tipo === 'giros' ? '🎰 Ranking de giros' : '🏆 Ranking de vitórias';
       return responder(interaction, { embeds: [embed(titulo, corpo, { rodape: 'ORG Royal AP' })] });
     },
   },

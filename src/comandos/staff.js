@@ -208,7 +208,7 @@ const comandos = [
           '3. Clique em **Pagamento recebido** e depois em **Liberar sala** com o ID e a senha.',
           '4. No fim, declare o vencedor pelo botão ou com `/vencedor`.',
           '',
-          '**Comandos úteis:** `/vencedor` · `/wo` · `/registrar_pix` · `/pix` · `/receita_mediadores` · `/ticket`',
+          '**Comandos úteis:** `/vencedor` · `/wo` · `/registrar_pix` · `/pix` · `/receita_mediadores`',
         ].join('\n'),
         {
           cor: config.CORES.principal,
@@ -261,14 +261,14 @@ const comandos = [
       }
       const modos = [...porModo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
       const semRegras = finalizadas.filter((partida) => !partida.regras).length;
-      const ticketMedio = finalizadas.length ? Math.round(movimentado / finalizadas.length) : 0;
+      const valorMedio = finalizadas.length ? Math.round(movimentado / finalizadas.length) : 0;
 
       const corpo = [
         `**APs finalizados:** ${finalizadas.length}`,
         `**Em andamento:** ${emAndamento.length}`,
         `**Cancelados:** ${canceladas.length}`,
         `**Valor movimentado:** ${reais(movimentado)}`,
-        `**Ticket médio:** ${reais(ticketMedio)}`,
+        `**Valor médio:** ${reais(valorMedio)}`,
         `**Salas sem regra registrada:** ${semRegras}`,
         '',
         modos.length

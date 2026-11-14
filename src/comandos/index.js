@@ -28,6 +28,7 @@ const modulos = [
   require('./voz'),
   require('./verp'),
   require('./nix'),
+  require('./royal'),
 ];
 
 const comandos = modulos.flatMap((modulo) => modulo.comandos);
