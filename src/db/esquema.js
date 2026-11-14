@@ -201,6 +201,14 @@ const ESQUEMA = [
     PRIMARY KEY (guild_id, chave)
   )`,
 
+  // Sorteios globais de versículos: cada ID é consumido uma vez por ciclo.
+  `CREATE TABLE IF NOT EXISTS versiculos_usados (
+    versiculo_id TEXT PRIMARY KEY,
+    usado_em INTEGER NOT NULL,
+    guild_id TEXT,
+    user_id TEXT
+  )`,
+
   `CREATE INDEX IF NOT EXISTS idx_filas_grupo ON filas (guild_id, modo, preco, gelo, entrou_em)`,
   `CREATE INDEX IF NOT EXISTS idx_telagens_url ON telagens (guild_id, url)`,
   `CREATE INDEX IF NOT EXISTS idx_partidas_canal ON partidas (guild_id, canal_id)`,

@@ -17,6 +17,8 @@ const modulos = [
   require('./economia'),
   require('./staff'),
   require('./moderacao'),
+  require('./comunidade'),
+  require('./limpeza'),
   require('./utilidades'),
   require('./botperfil'),
   require('./mediadores'),

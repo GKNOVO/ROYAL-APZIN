@@ -12,12 +12,14 @@ const { handleSelect } = require('../interacoes/selects');
 const { handleModal } = require('../interacoes/modais');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
+const membros = require('./membros');
 const { embedErro } = require('../util/embeds');
 
 const EFEMERO = 64;
 
 function montar(client, db) {
   const ctx = { db, client };
+  membros.registrar(client, db);
 
   client.once(Events.ClientReady, async (conectado) => {
     console.log(`\n✅ Conectado como ${conectado.user.tag}`);

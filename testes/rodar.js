@@ -203,10 +203,10 @@ function resposta(interaction) {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((linha) => linha.name);
-    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao', 'telagem_links', 'telagens']) {
+    for (const esperada of ['usuarios', 'staff', 'paineis', 'mensagens_painel', 'filas', 'partidas', 'partida_jogadores', 'transacoes', 'blacklist', 'auditoria', 'configuracoes', 'convites', 'logs_dm', 'plantao', 'telagem_links', 'telagens', 'versiculos_usados']) {
       assert.ok(tabelas.includes(esperada), `faltou a tabela ${esperada}`);
     }
-    passar('banco: 16 tabelas criadas automaticamente');
+    passar('banco: 17 tabelas criadas automaticamente');
   }
 
   // ---------- usuários e economia ----------
@@ -1194,10 +1194,10 @@ function resposta(interaction) {
     const nomes = definicoes.map((comando) => comando.name);
     const obrigatorios = [
       'addgiros', 'addvitoria', 'ajuda', 'analista', 'anunciar', 'apostas', 'aux', 'blacklist',
-      'boombot', 'conectar', 'convites', 'desconectar', 'enviar_dm', 'envio_massa', 'limpar',
+      'boombot', 'clear', 'clearall', 'configcanal1', 'configcanal2', 'conectar', 'convites', 'desconectar', 'enviar_dm', 'envio_massa', 'limpar',
       'limpardm', 'logs', 'loja', 'painel', 'painel_mediador', 'perfil', 'pix', 'ranking',
       'receita_mediadores', 'registrar_pix', 'ssemu', 'ssmob', 'temu', 'ticket', 'ticketfixo',
-      'vencedor', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
+      'vencedor', 'versiculododia', 'vitoria', 'wo', 'nix', 'botperfil', 'setbot',
       'criar_telagem', 'verp', 'mediadores', 'painel_mediadores', 'go',
       'anunciar2', 'conectarbotcall', 'tirarbotcall', 'telagem_links',
     ];
@@ -1208,9 +1208,9 @@ function resposta(interaction) {
     for (const nome of paineisEsperados) {
       assert.ok(nomes.includes(nome), `faltou o painel /${nome}`);
     }
-    assert.strictEqual(nomes.length, 60);
-    assert.strictEqual(new Set(nomes).size, 60, 'nome de comando repetido');
-    passar('comandos: 60 registrados (45 gerais + 15 painéis), sem repetição');
+    assert.strictEqual(nomes.length, 65);
+    assert.strictEqual(new Set(nomes).size, 65, 'nome de comando repetido');
+    passar('comandos: 65 registrados (50 gerais + 15 painéis), sem repetição');
 
     const comandoNix = definicoes.find((comando) => comando.name === 'nix');
     assert.deepStrictEqual(
@@ -2071,6 +2071,136 @@ function resposta(interaction) {
 
     passar('mediadores: Limpar, Modo, Gestão PIX e Reenviar respondem (e só ADM mexe)');
     db7.close();
+  }
+
+  // ---------- novos comandos de comunidade e limpeza ----------
+  {
+    const servicoVersiculos = require('../src/servicos/versiculos');
+    const comunidade = require('../src/comandos/comunidade');
+    const eventosMembros = require('../src/eventos/membros');
+    const limpeza = require('../src/comandos/limpeza');
+    const dados = servicoVersiculos.listarVersiculos();
+    assert.ok(dados.length >= 1000, 'o arquivo contém pelo menos mil versículos');
+    assert.ok(dados.some((linha) => linha.referencia.startsWith('Provérbios ')));
+    assert.ok(dados.every((linha) => linha.id && linha.texto && linha.referencia));
+
+    const dbVers = abrirBanco(path.join(pasta, 'versiculos.db'));
+    const pequenos = [
+      { id: 'teste.1.1', texto: 'Primeiro.', referencia: 'Teste 1:1' },
+      { id: 'teste.1.2', texto: 'Segundo.', referencia: 'Teste 1:2' },
+    ];
+    const primeiro = servicoVersiculos.sortear(dbVers, { versiculos: pequenos, aleatorio: () => 0 });
+    dbVers.close();
+    const dbVersReaberto = abrirBanco(path.join(pasta, 'versiculos.db'));
+    const segundo = servicoVersiculos.sortear(dbVersReaberto, { versiculos: pequenos, aleatorio: () => 0 });
+    assert.notStrictEqual(primeiro.versiculo.id, segundo.versiculo.id, 'reiniciar não repete versículo já consumido');
+    const terceiro = servicoVersiculos.sortear(dbVersReaberto, { versiculos: pequenos, aleatorio: () => 0 });
+    assert.strictEqual(terceiro.cicloReiniciado, true, 'o ciclo só reinicia depois de esgotar a lista');
+    assert.strictEqual(terceiro.versiculo.id, primeiro.versiculo.id);
+    dbVersReaberto.close();
+    passar('versículos: base com mais de mil entradas, sem repetição persistente e reinício só ao esgotar');
+
+    const usuarioVersiculo = {
+      id: 'u-versiculo',
+      username: 'jogador',
+      tag: 'jogador#0001',
+      displayAvatarURL(opcoes) {
+        assert.deepStrictEqual(opcoes, { dynamic: true, size: 256 });
+        return 'https://cdn.example/avatar.png';
+      },
+    };
+    const embedVers = comunidade
+      .embedVersiculo(usuarioVersiculo, dados.find((linha) => linha.referencia === 'Provérbios 3:5'), new Date('2026-01-01T03:04:00Z'))
+      .toJSON();
+    assert.strictEqual(embedVers.color, 0xf1c40f);
+    assert.strictEqual(embedVers.title, '📿 Versículo do Dia');
+    assert.ok(embedVers.description.includes('**— Provérbios 3:5**'));
+    assert.ok(embedVers.description.includes('*"'));
+    assert.strictEqual(embedVers.footer.icon_url, 'https://cdn.example/avatar.png');
+    assert.ok(embedVers.footer.text.includes('01/01/2026 00:04'));
+
+    const canalConfig = { id: 'canal-boas-vindas', isTextBased: () => true, async send() {} };
+    const adminConfig = fakeInteraction({ commandName: 'configcanal1', channel: canalConfig, perms: [PermissionsBitField.Flags.Administrator] });
+    await comandos.executar(adminConfig, { db, client: null });
+    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_boas_vindas'), 'canal-boas-vindas');
+    assert.strictEqual(adminConfig.chamadas.deferReply.flags, 64, 'configuração responde em efêmero');
+
+    const member = {
+      id: 'membro-1',
+      user: {
+        username: 'jogador',
+        createdTimestamp: 1700000000000,
+        displayAvatarURL(opcoes) {
+          assert.deepStrictEqual(opcoes, { dynamic: true, size: 256 });
+          return 'https://cdn.example/member.png';
+        },
+      },
+      guild: { memberCount: 24 },
+    };
+    const entrada = eventosMembros.embedEntrada(member).toJSON();
+    const saida = eventosMembros.embedSaida(member).toJSON();
+    assert.strictEqual(entrada.color, 0x2b2d31);
+    assert.strictEqual(entrada.title, '👋 Novo Jogador');
+    assert.ok(entrada.description.includes('<@membro-1> • `jogador`'));
+    assert.ok(entrada.description.includes('**Jogadores agora:** 24'));
+    assert.strictEqual(entrada.thumbnail.url, 'https://cdn.example/member.png');
+    assert.strictEqual(saida.title, '👋 Jogador saiu');
+    assert.ok(saida.description.includes('**Conta criada:** <t:'));
+    assert.strictEqual(saida.color, 0x2b2d31);
+
+    const mensagensCanal = new Collection();
+    const adicionarMensagem = (id, createdTimestamp) => {
+      const mensagem = {
+        id,
+        createdTimestamp,
+        async delete() { mensagensCanal.delete(id); },
+      };
+      mensagensCanal.set(id, mensagem);
+    };
+    adicionarMensagem('recente-1', Date.now() - 1000);
+    adicionarMensagem('recente-2', Date.now() - 2000);
+    adicionarMensagem('antiga', Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const canalLimpeza = {
+      id: 'canal-limpeza',
+      isTextBased: () => true,
+      messages: {
+        async fetch({ limit }) {
+          return new Collection(
+            [...mensagensCanal.values()]
+              .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+              .slice(0, limit)
+              .map((mensagem) => [mensagem.id, mensagem]),
+          );
+        },
+      },
+      async bulkDelete(mensagens) {
+        const removidas = new Collection();
+        for (const mensagem of mensagens) {
+          if (mensagensCanal.delete(mensagem.id)) removidas.set(mensagem.id, mensagem);
+        }
+        return removidas;
+      },
+    };
+    const limparDuas = fakeInteraction({
+      commandName: 'clear',
+      channel: canalLimpeza,
+      options: { quantidade: 2 },
+      perms: [PermissionsBitField.Flags.ManageMessages],
+    });
+    await comandos.executar(limparDuas, { db, client: null });
+    assert.strictEqual(mensagensCanal.size, 1, 'clear remove exatamente duas mensagens recentes');
+    assert.ok(limparDuas.chamadas.deleteReply, 'clear apaga o defer efêmero e não deixa confirmação');
+
+    const limparTudo = fakeInteraction({
+      commandName: 'clearall',
+      channel: canalLimpeza,
+      perms: [PermissionsBitField.Flags.Administrator],
+    });
+    await comandos.executar(limparTudo, { db, client: null });
+    assert.strictEqual(mensagensCanal.size, 0, 'clearall remove também mensagens antigas de forma individual');
+    assert.ok(limparTudo.chamadas.deleteReply, 'clearall apaga a resposta efêmera');
+    assert.ok(limpeza.comandos.every((comando) => ['clear', 'clearall'].includes(comando.data.name)));
+    passar('comandos novos: embeds, configuração administrativa, boas-vindas, /clear e /clearall silenciosos');
   }
 
   // ---------- limpeza ----------
