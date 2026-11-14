@@ -5,7 +5,7 @@
   "description": "Bot ORG Royal AP: filas, apostas, mediação AP/X1-X4, tickets e salas automáticas da Nix FF",
   "main": "index.js",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "start": "node index.js",
