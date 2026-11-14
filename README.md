@@ -40,16 +40,43 @@ nano .env
 npm start
 ```
 
-Quando aparecer `✅ Conectado como ...` e `✅ 60 comandos registrados`, está no ar.
+Quando aparecer `✅ Conectado como ...` e `✅ 65 comandos registrados`, está no ar.
 
-### Banco de dados: nenhum passo extra
+Para sincronizar os comandos sem reiniciar o bot, execute `npm run commands:sync` com `DISCORD_TOKEN`
+e `CLIENT_ID` configurados. Se `GUILD_ID` estiver definido, a sincronização é imediata naquela guild;
+sem ele, a publicação é global e pode levar até uma hora.
+
+### Banco principal: SQLite
 
 O bot usa o **SQLite que já vem dentro do Node.js** (Node 22.13+). Não precisa compilar nada,
 nem instalar banco separado. Se o `better-sqlite3` estiver instalado (é opcional), o bot usa ele
 sozinho — os dois guardam o mesmo arquivo `database/royal.db`.
 
+O armazenamento principal das filas, partidas, saldos e demais recursos antigos continua em SQLite.
+As configurações dos canais de boas-vindas/saída e o histórico de `/versiculododia` usam Supabase;
+configure-os seguindo a seção **Supabase para versículos e canais** abaixo.
+
 Se aparecer o erro **“Nenhum motor de SQLite disponível”**, atualize o Node
 (`pkg update && pkg upgrade` no Termux) ou rode `npm install better-sqlite3`.
+
+### Supabase para versículos e canais
+
+1. Crie um projeto Supabase e cadastre `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` nas variáveis privadas
+   da hospedagem. Use a chave privada de servidor; nunca a chave anon/public e nunca publique a chave no GitHub.
+2. No **SQL Editor** do Supabase, execute o arquivo `supabase/migrations/202611140001_discord_features.sql`.
+   Ele cria as tabelas `discord_configuracoes`, `discord_versiculos` e `discord_versiculos_usados`, com RLS
+   habilitado e acesso de escrita restrito ao servidor.
+3. Com as variáveis Supabase disponíveis no ambiente onde está o repositório, execute uma vez:
+   `npm run seed:versiculos`. Isso carrega os 31.102 versículos e pode ser repetido com segurança.
+4. Configure os canais com `/configcanal1` e `/configcanal2`. O sorteio usa uma função SQL transacional
+   e um ciclo global compartilhado entre servidores: não repete até esgotar a lista toda.
+
+Os IDs de canais e o histórico de versículos que eventualmente já estejam no SQLite não são importados
+automaticamente. Após aplicar a migration, rode `/configcanal1` e `/configcanal2` novamente; o ciclo de
+versículos no Supabase começa com todos os registros disponíveis.
+
+O SQLite continua sendo usado pelos sistemas legados do bot; esta configuração Supabase cobre somente
+as funcionalidades recentes de versículos e canais.
 
 ---
 
@@ -62,20 +89,20 @@ serviço não entra mais em timeout.
 1. Suba a pasta do bot num repositório do **GitHub**.
 2. No Render: **New +** → **Web Service** → escolha o repositório.
 3. Preencha:
-   - **Runtime:** `Node`
+   - **Runtime:** `Node 22.13+`
    - **Build Command:** `npm install`
    - **Start Command:** `npm start`
    - **Instance Type:** `Free`
-4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `GUILD_ID`,
+4. Em **Environment**, cadastre as variáveis do `.env` uma por uma: `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`,
    `CATEGORIA_FILAS_ID`, `CATEGORY_TICKETS_ID`, `CARGO_ADMIN_ID`, `CARGO_STAFF_ID`,
-   `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`.
+   `CARGO_MEDIADOR_ID`, `CANAL_LOGS_ID`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
    Não precisa criar `PORT`: o Render injeta essa variável sozinho.
 5. **Create Web Service**. Nos logs deve aparecer:
 
 ```
 🌐 Servidor HTTP de saúde aberto na porta 10000 (Render/Docker ok)
 ✅ Conectado como SeuBot#1234
-✅ 60 comandos registrados
+✅ 65 comandos registrados
 ```
 
 **Teste rápido:** abra a URL do serviço (`https://seu-bot.onrender.com`) no navegador. Deve aparecer
@@ -138,9 +165,11 @@ Só o **token** é obrigatório. O resto é para o bot saber onde criar as coisa
 | Variável | Obrigatória | Para que serve | Exemplo |
 |---|---|---|---|
 | `DISCORD_TOKEN` | ✅ | Senha do bot | `MTIzNDU2...` |
-| `CLIENT_ID` | não | ID da aplicação (o bot descobre sozinho) | `123456789012345678` |
+| `CLIENT_ID` | recomendado | ID da aplicação; necessário para `npm run commands:sync` (o bot conectado descobre sozinho) | `123456789012345678` |
 | `GUILD_ID` | não | ID do seu servidor. **Preencha para os comandos aparecerem na hora** (vazio = global, até 1h) | `987654321098765432` |
 | `DATABASE_PATH` | não | Onde fica o banco | `database/royal.db` |
+| `SUPABASE_URL` | necessário para versículos/canais | URL do projeto Supabase | `https://seu-projeto.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | necessário para versículos/canais | Chave privada server-side; nunca use anon/public nem publique no GitHub | *(segredo no painel da hospedagem)* |
 | `PORT` | não | Porta do servidor de saúde (Render define sozinho) | `3000` |
 | `CATEGORIA_FILAS_ID` | recomendado | **Categoria das salas de partida**: quando a fila fecha, a sala privada nasce **dentro dela** (também dá para definir com `/boombot setcategoria`) | `111222333444555666` |
 | `CATEGORY_TICKETS_ID` | recomendado | **Categoria dos tickets**: todo ticket novo nasce **dentro dela**, sem mensagem no chat (também dá para definir com `/boombot setticket`) | `111222333444555777` |
@@ -456,9 +485,9 @@ ele responde "deu um erro aqui", registra na auditoria e continua online.
 npm test
 ```
 
-Os testes criam um banco temporário e um Discord falso em memória. Cobrem: esquema do banco, moedas e
+Os testes criam um banco SQLite temporário, mocks Supabase/Discord e REST em memória. Cobrem: esquema do banco, moedas e
 giros, fila (entrada, saída, reserva atômica), partida completa (regras → mediador → pagamento →
-sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 60 comandos, o `/go`, os tickets, o servidor HTTP e
+sala → resultado), comissão, W.O., cancelamento, blacklist, painéis, os 15 modos, os 65 comandos, o `/go`, os tickets, o servidor HTTP e
 os handlers de `/registrar_pix`, `/ajuda`, `/perfil`, `/loja`, `/pix` e `/boombot`.
 
 ---
@@ -489,7 +518,7 @@ No Termux, use `termux-wake-lock` antes de `npm start` para o Android não pausa
 | `Configuração incompleta` | Falta o `DISCORD_TOKEN` no `.env` |
 | `Token inválido` | Gere outro (Reset Token) e cole numa linha só |
 | `O bot precisa do intent de membros ligado` | Developer Portal → Bot → **Server Members Intent** |
-| Comando não aparece | Confira `GUILD_ID` no `.env` e reinicie; ou espere a propagação global |
+| Comando não aparece | Confirme o deploy/commit; execute `npm run commands:sync` com `CLIENT_ID` e `DISCORD_TOKEN`; confira logs de erro e o escopo `applications.commands`. Com `GUILD_ID` aparece na hora; global pode levar até 1h |
 | `não consegui criar a sala privada` | Dê ao bot **Gerenciar Canais** e **Gerenciar Cargos**, e defina a categoria com `/boombot setcategoria` |
 | Mediador não consegue assumir | Ele precisa de cargo de staff/mediador **e** `/registrar_pix` |
 | PIX não aparece | O mediador precisa ter rodado `/registrar_pix`; o botão só funciona para quem assumiu |

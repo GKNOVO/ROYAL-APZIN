@@ -5,11 +5,13 @@
 const {
   ChannelType,
   EmbedBuilder,
+  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
 } = require('discord.js');
-const { definirConfig } = require('../db');
+const persistenciaSupabase = require('../servicos/supabase');
 const versiculos = require('../servicos/versiculos');
+const { embedErro } = require('../util/embeds');
 const { responderErro, responderPrivado } = require('../util/seguranca');
 
 function dataHoraBrasilia(data = new Date()) {
@@ -42,7 +44,7 @@ function temAdministrator(interaction) {
   return Boolean(interaction.memberPermissions?.has?.(PermissionFlagsBits.Administrator));
 }
 
-async function configurarCanal(interaction, db, chave, rotulo) {
+async function configurarCanal(interaction, chave, rotulo, clienteSupabase) {
   if (!temAdministrator(interaction)) {
     return responderErro(interaction, 'Você precisa da permissão **Administrator** do Discord para configurar este canal.');
   }
@@ -52,7 +54,7 @@ async function configurarCanal(interaction, db, chave, rotulo) {
     return responderErro(interaction, 'Escolha um canal de texto válido, ou execute o comando em um canal de texto.');
   }
 
-  definirConfig(db, interaction.guildId, chave, canal.id);
+  await persistenciaSupabase.definirConfig(interaction.guildId, chave, canal.id, clienteSupabase);
   return responderPrivado(interaction, { content: `✅ Canal de ${rotulo} salvo: ${canal}.` });
 }
 
@@ -67,12 +69,22 @@ const comandos = [
       .setDefaultMemberPermissions(null),
     defer: 'publico',
 
-    async executar(interaction, { db }) {
-      const sorteio = versiculos.sortear(db, {
-        guildId: interaction.guildId,
-        userId: interaction.user.id,
-      });
-      return interaction.editReply({ embeds: [embedVersiculo(interaction.user, sorteio.versiculo)] });
+    async executar(interaction, contexto = {}) {
+      try {
+        const sorteio = await versiculos.sortear({
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          cliente: contexto.supabase,
+        });
+        return interaction.editReply({ embeds: [embedVersiculo(interaction.user, sorteio.versiculo)] });
+      } catch (erro) {
+        console.error('[versiculos] falha no sorteio:', erro.message);
+        await interaction.deleteReply().catch(() => null);
+        return interaction.followUp({
+          embeds: [embedErro('A base de versículos não está disponível. A equipe precisa conferir o Supabase e carregar a lista.')],
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => null);
+      }
     },
   },
   {
@@ -84,8 +96,8 @@ const comandos = [
       )
       .setDefaultMemberPermissions(permissaoAdmin),
 
-    async executar(interaction, { db }) {
-      return configurarCanal(interaction, db, 'canal_boas_vindas', 'boas-vindas');
+    async executar(interaction, contexto = {}) {
+      return configurarCanal(interaction, 'canal_boas_vindas', 'boas-vindas', contexto.supabase);
     },
   },
   {
@@ -97,8 +109,8 @@ const comandos = [
       )
       .setDefaultMemberPermissions(permissaoAdmin),
 
-    async executar(interaction, { db }) {
-      return configurarCanal(interaction, db, 'canal_saida', 'saída');
+    async executar(interaction, contexto = {}) {
+      return configurarCanal(interaction, 'canal_saida', 'saída', contexto.supabase);
     },
   },
 ];

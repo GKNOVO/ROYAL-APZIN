@@ -2084,21 +2084,62 @@ function resposta(interaction) {
     assert.ok(dados.some((linha) => linha.referencia.startsWith('Provérbios ')));
     assert.ok(dados.every((linha) => linha.id && linha.texto && linha.referencia));
 
-    const dbVers = abrirBanco(path.join(pasta, 'versiculos.db'));
     const pequenos = [
       { id: 'teste.1.1', texto: 'Primeiro.', referencia: 'Teste 1:1' },
       { id: 'teste.1.2', texto: 'Segundo.', referencia: 'Teste 1:2' },
     ];
-    const primeiro = servicoVersiculos.sortear(dbVers, { versiculos: pequenos, aleatorio: () => 0 });
-    dbVers.close();
-    const dbVersReaberto = abrirBanco(path.join(pasta, 'versiculos.db'));
-    const segundo = servicoVersiculos.sortear(dbVersReaberto, { versiculos: pequenos, aleatorio: () => 0 });
+    const versiculosUsados = new Set();
+    const clienteVersiculos = {
+      async rpc(nome, parametros) {
+        assert.strictEqual(nome, 'discord_sortear_versiculo');
+        assert.deepStrictEqual(parametros, { p_guild_id: 'g1', p_user_id: 'u1' });
+        let disponiveis = pequenos.filter((linha) => !versiculosUsados.has(linha.id));
+        let cicloReiniciado = false;
+        if (disponiveis.length === 0) {
+          versiculosUsados.clear();
+          disponiveis = pequenos;
+          cicloReiniciado = true;
+        }
+        const escolhido = disponiveis[0];
+        versiculosUsados.add(escolhido.id);
+        return { data: [{ ...escolhido, ciclo_reiniciado: cicloReiniciado }], error: null };
+      },
+    };
+    const primeiro = await servicoVersiculos.sortear({ guildId: 'g1', userId: 'u1', cliente: clienteVersiculos });
+    const segundo = await servicoVersiculos.sortear({ guildId: 'g1', userId: 'u1', cliente: clienteVersiculos });
     assert.notStrictEqual(primeiro.versiculo.id, segundo.versiculo.id, 'reiniciar não repete versículo já consumido');
-    const terceiro = servicoVersiculos.sortear(dbVersReaberto, { versiculos: pequenos, aleatorio: () => 0 });
+    const terceiro = await servicoVersiculos.sortear({ guildId: 'g1', userId: 'u1', cliente: clienteVersiculos });
     assert.strictEqual(terceiro.cicloReiniciado, true, 'o ciclo só reinicia depois de esgotar a lista');
     assert.strictEqual(terceiro.versiculo.id, primeiro.versiculo.id);
-    dbVersReaberto.close();
-    passar('versículos: base com mais de mil entradas, sem repetição persistente e reinício só ao esgotar');
+    passar('versículos: base com mais de mil entradas e chamada RPC Supabase com ciclo sem repetição');
+
+    const seedVersiculos = require('../scripts/seed-versiculos');
+    const lotesSeed = [];
+    const clienteSeed = {
+      from(tabela) {
+        assert.strictEqual(tabela, 'discord_versiculos');
+        return {
+          async upsert(lote, opcoes) {
+            assert.strictEqual(opcoes.onConflict, 'id');
+            lotesSeed.push(lote);
+            return { error: null };
+          },
+        };
+      },
+    };
+    const logOriginal = console.log;
+    let totalSeed;
+    try {
+      console.log = () => {};
+      totalSeed = await seedVersiculos.seedVersiculos(clienteSeed);
+    } finally {
+      console.log = logOriginal;
+    }
+    assert.strictEqual(totalSeed, dados.length);
+    assert.ok(lotesSeed.every((lote) => lote.length <= seedVersiculos.TAMANHO_LOTE));
+    assert.strictEqual(lotesSeed.flat().length, dados.length);
+    assert.strictEqual(new Set(lotesSeed.flat().map((linha) => linha.id)).size, dados.length);
+    passar('seed Supabase: todos os versículos enviados em lotes idempotentes');
 
     const usuarioVersiculo = {
       id: 'u-versiculo',
@@ -2119,10 +2160,30 @@ function resposta(interaction) {
     assert.strictEqual(embedVers.footer.icon_url, 'https://cdn.example/avatar.png');
     assert.ok(embedVers.footer.text.includes('01/01/2026 00:04'));
 
+    const configsSupabase = new Map();
+    const clienteSupabase = {
+      from(tabela) {
+        assert.strictEqual(tabela, 'discord_configuracoes');
+        const filtros = {};
+        return {
+          async upsert(registro, opcoes) {
+            assert.strictEqual(opcoes.onConflict, 'guild_id,chave');
+            configsSupabase.set(`${registro.guild_id}:${registro.chave}`, registro.valor);
+            return { error: null };
+          },
+          select() { return this; },
+          eq(campo, valor) { filtros[campo] = valor; return this; },
+          async maybeSingle() {
+            const valor = configsSupabase.get(`${filtros.guild_id}:${filtros.chave}`);
+            return { data: valor === undefined ? null : { valor }, error: null };
+          },
+        };
+      },
+    };
     const canalConfig = { id: 'canal-boas-vindas', isTextBased: () => true, async send() {} };
     const adminConfig = fakeInteraction({ commandName: 'configcanal1', channel: canalConfig, perms: [PermissionsBitField.Flags.Administrator] });
-    await comandos.executar(adminConfig, { db, client: null });
-    assert.strictEqual(require('../src/db').obterConfig(db, 'g1', 'canal_boas_vindas'), 'canal-boas-vindas');
+    await comandos.executar(adminConfig, { db, client: null, supabase: clienteSupabase });
+    assert.strictEqual(configsSupabase.get('g1:canal_boas_vindas'), 'canal-boas-vindas');
     assert.strictEqual(adminConfig.chamadas.deferReply.flags, 64, 'configuração responde em efêmero');
 
     const member = {
@@ -2135,7 +2196,19 @@ function resposta(interaction) {
           return 'https://cdn.example/member.png';
         },
       },
-      guild: { memberCount: 24 },
+      guild: {
+        id: 'g1',
+        memberCount: 24,
+        channels: {
+          async fetch(id) {
+            assert.strictEqual(id, 'canal-boas-vindas');
+            return {
+              isTextBased: () => true,
+              async send(payload) { return payload; },
+            };
+          },
+        },
+      },
     };
     const entrada = eventosMembros.embedEntrada(member).toJSON();
     const saida = eventosMembros.embedSaida(member).toJSON();
@@ -2147,6 +2220,32 @@ function resposta(interaction) {
     assert.strictEqual(saida.title, '👋 Jogador saiu');
     assert.ok(saida.description.includes('**Conta criada:** <t:'));
     assert.strictEqual(saida.color, 0x2b2d31);
+    const eventoPublicado = await eventosMembros.publicar(member, 'canal_boas_vindas', eventosMembros.embedEntrada, clienteSupabase);
+    assert.strictEqual(eventoPublicado.embeds[0].toJSON().title, '👋 Novo Jogador');
+
+    const { registrarComandos } = require('../src/servicos/registroComandos');
+    const definicoesSlash = comandos.definicoes();
+    let requisicaoGuild;
+    const resultadoGuild = await registrarComandos({
+      clientId: 'app-teste',
+      guildId: 'guild-teste',
+      definicoes: definicoesSlash,
+      rest: { async put(rota, opcoes) { requisicaoGuild = { rota, opcoes }; } },
+    });
+    assert.strictEqual(requisicaoGuild.rota, '/applications/app-teste/guilds/guild-teste/commands');
+    assert.strictEqual(requisicaoGuild.opcoes.body.length, definicoesSlash.length);
+    assert.strictEqual(resultadoGuild.quantidade, definicoesSlash.length);
+    for (const nome of ['versiculododia', 'configcanal1', 'configcanal2', 'clear', 'clearall']) {
+      assert.ok(requisicaoGuild.opcoes.body.some((comando) => comando.name === nome), `sync incluiu /${nome}`);
+    }
+    let rotaGlobal;
+    await registrarComandos({
+      clientId: 'app-teste',
+      definicoes: definicoesSlash,
+      rest: { async put(rota) { rotaGlobal = rota; } },
+    });
+    assert.strictEqual(rotaGlobal, '/applications/app-teste/commands');
+    passar('registro slash: REST.put atualiza guild/global com os cinco comandos recentes');
 
     const mensagensCanal = new Collection();
     const adicionarMensagem = (id, createdTimestamp) => {

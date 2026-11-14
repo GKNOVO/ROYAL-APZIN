@@ -3,7 +3,7 @@
 /** Mensagens de entrada e saída nos canais configurados por servidor. */
 
 const { EmbedBuilder, Events } = require('discord.js');
-const { obterConfig } = require('../db');
+const persistenciaSupabase = require('../servicos/supabase');
 
 const COR_ESCURO = 0x2b2d31;
 
@@ -37,8 +37,14 @@ function embedSaida(member) {
     .setThumbnail(urlAvatar(member));
 }
 
-async function publicar(client, db, member, chave, montarEmbed) {
-  const canalId = obterConfig(db, member.guild.id, chave);
+async function publicar(member, chave, montarEmbed, clienteSupabase) {
+  let canalId;
+  try {
+    canalId = await persistenciaSupabase.obterConfig(member.guild.id, chave, clienteSupabase);
+  } catch (erro) {
+    console.error(`[membros] não consegui ler ${chave} no Supabase: ${erro.message}`);
+    return null;
+  }
   if (!canalId) return null;
 
   let canal;
@@ -61,12 +67,12 @@ async function publicar(client, db, member, chave, montarEmbed) {
   }
 }
 
-function registrar(client, db) {
+function registrar(client) {
   client.on(Events.GuildMemberAdd, (member) =>
-    publicar(client, db, member, 'canal_boas_vindas', embedEntrada),
+    publicar(member, 'canal_boas_vindas', embedEntrada),
   );
   client.on(Events.GuildMemberRemove, (member) =>
-    publicar(client, db, member, 'canal_saida', embedSaida),
+    publicar(member, 'canal_saida', embedSaida),
   );
 }
 

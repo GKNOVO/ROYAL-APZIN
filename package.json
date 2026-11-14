@@ -10,10 +10,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "test": "node testes/rodar.js"
+    "test": "node testes/rodar.js",
+    "commands:sync": "node scripts/registrar-comandos.js",
+    "seed:versiculos": "node scripts/seed-versiculos.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
+    "@supabase/supabase-js": "^2.119.0",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.7"
   },

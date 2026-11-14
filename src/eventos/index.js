@@ -12,6 +12,7 @@ const { handleSelect } = require('../interacoes/selects');
 const { handleModal } = require('../interacoes/modais');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
+const { registrarComandos } = require('../servicos/registroComandos');
 const membros = require('./membros');
 const { embedErro } = require('../util/embeds');
 
@@ -19,7 +20,7 @@ const EFEMERO = 64;
 
 function montar(client, db) {
   const ctx = { db, client };
-  membros.registrar(client, db);
+  membros.registrar(client);
 
   client.once(Events.ClientReady, async (conectado) => {
     console.log(`\n✅ Conectado como ${conectado.user.tag}`);
@@ -32,22 +33,30 @@ function montar(client, db) {
 
     try {
       const lista = comandos.definicoes();
-      if (config.GUILD_ID) {
-        const guild = await conectado.guilds.fetch(config.GUILD_ID);
-        await guild.commands.set(lista);
-        console.log(`✅ ${lista.length} comandos registrados em "${guild.name}" (na hora).`);
+      const registro = await registrarComandos({
+        token: config.TOKEN,
+        clientId: conectado.application.id,
+        guildId: config.GUILD_ID,
+        definicoes: lista,
+      });
+      if (registro.guildId) {
+        const guild = conectado.guilds.cache.get(registro.guildId);
+        console.log(`✅ ${lista.length} comandos registrados em "${guild?.name || registro.guildId}" (na hora).`);
       } else {
-        await conectado.application.commands.set(lista);
         console.log(`✅ ${lista.length} comandos registrados globalmente (pode levar até 1 hora).`);
-        console.log('   Dica: preencha GUILD_ID no .env para aparecer na hora.');
+        console.log('   Dica: defina GUILD_ID nas variáveis de ambiente para aparecer na hora.');
       }
       const filasPublicadas = db.prepare('SELECT COUNT(*) AS total FROM paineis').get().total;
       console.log(`   Painéis de AP já publicados: ${filasPublicadas}/15\n`);
     } catch (erro) {
-      console.error('❌ Não consegui registrar os comandos:', erro.message);
+      const detalhes = [erro.code && `código ${erro.code}`, erro.status && `HTTP ${erro.status}`, erro.message]
+        .filter(Boolean)
+        .join(' | ');
+      console.error('❌ Não consegui registrar os comandos:', detalhes);
       if (/Missing Access|Missing Permissions/i.test(erro.message)) {
         console.error('   Convide o bot novamente com o escopo applications.commands.');
       }
+      console.error('   Após corrigir token/IDs/permissões, execute npm run commands:sync para tentar novamente.');
     }
 
     for (const guild of conectado.guilds.cache.values()) {

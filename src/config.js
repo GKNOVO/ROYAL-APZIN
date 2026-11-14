@@ -148,6 +148,9 @@ const config = {
   CLIENT_ID: texto(process.env.CLIENT_ID),
   GUILD_ID: texto(process.env.GUILD_ID),
   CAMINHO_BANCO: path.resolve(texto(process.env.DATABASE_PATH, 'database/royal.db')),
+  /** Credenciais server-side; nunca enviar ou registrar a service-role key. */
+  SUPABASE_URL: texto(process.env.SUPABASE_URL),
+  SUPABASE_SERVICE_ROLE_KEY: texto(process.env.SUPABASE_SERVICE_ROLE_KEY),
 
   /**
    * CATEGORIA onde nascem as salas privadas de partida (quando a fila fecha,
