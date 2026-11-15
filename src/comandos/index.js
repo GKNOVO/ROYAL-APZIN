@@ -7,8 +7,9 @@
  * a resposta com interaction.editReply(...).
  */
 
-const { MessageFlags } = require('discord.js');
 const { embedErro } = require('../util/embeds');
+const { responderPrivado } = require('../util/seguranca');
+const { MessageFlags } = require('discord.js');
 
 const modulos = [
   require('./paineis'),
@@ -33,7 +34,6 @@ const modulos = [
 
 const comandos = modulos.flatMap((modulo) => modulo.comandos);
 const porNome = new Map(comandos.map((comando) => [comando.data.name, comando]));
-
 const EFEMERO = MessageFlags?.Ephemeral ?? 64;
 
 /** Comandos cujo resultado deve ficar visível para todo o canal. */
@@ -58,14 +58,12 @@ function buscar(nome) {
   return porNome.get(String(nome)) || null;
 }
 
-async function avisarFalha(interaction, adiado, erro) {
+async function avisarFalha(interaction, erro) {
   const aviso = {
     embeds: [embedErro(String(erro?.message || 'Deu um erro aqui. Tente de novo em alguns segundos.').slice(0, 400))],
   };
   try {
-    if (adiado || interaction.deferred) return await interaction.editReply(aviso);
-    if (interaction.replied) return await interaction.followUp({ ...aviso, flags: EFEMERO });
-    return await interaction.reply({ ...aviso, flags: EFEMERO });
+    return await responderPrivado(interaction, aviso);
   } catch {
     return null; // interação já expirou: o log abaixo já registrou
   }
@@ -76,7 +74,6 @@ async function executar(interaction, ctx) {
   if (!comando) return null;
 
   const modo = modoDefer(comando);
-  let adiado = false;
 
   if (
     modo !== 'nenhum' &&
@@ -86,10 +83,13 @@ async function executar(interaction, ctx) {
   ) {
     try {
       await interaction.deferReply(modo === 'privado' ? { flags: EFEMERO } : {});
-      adiado = true;
     } catch (erro) {
-      // 10062 = interação expirada (bot acabou de reiniciar). Não adianta seguir.
       console.error(`[comandos] deferReply falhou em /${interaction.commandName}:`, erro.message);
+      const jaReconhecida = Number(erro?.code) === 40060 || erro?.name === 'InteractionAlreadyReplied';
+      if (!jaReconhecida) {
+        await avisarFalha(interaction, erro);
+        return null;
+      }
     }
   }
 
@@ -97,7 +97,7 @@ async function executar(interaction, ctx) {
     return await comando.executar(interaction, ctx);
   } catch (erro) {
     console.error(`[comandos] erro em /${interaction.commandName}:`, erro);
-    await avisarFalha(interaction, adiado, erro);
+    await avisarFalha(interaction, erro);
     return null;
   }
 }

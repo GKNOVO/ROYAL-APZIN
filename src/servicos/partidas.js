@@ -3,7 +3,6 @@
 /** Partidas: criação, confirmação de regras, mediação, PIX, pagamento, sala e resultado. */
 
 const crypto = require('crypto');
-const usuarios = require('./usuarios');
 
 const agora = () => Date.now();
 
@@ -159,12 +158,6 @@ function assumir(db, id, mediadorId, comissao) {
   return buscar(db, id);
 }
 
-function salvarPix(db, id, { chave, titular }) {
-  db.prepare('UPDATE partidas SET pix_chave = ?, pix_titular = ? WHERE id = ?')
-    .run(chave ? String(chave) : null, titular ? String(titular) : null, String(id));
-  return buscar(db, id);
-}
-
 function marcarPago(db, id) {
   const partida = buscar(db, id);
   if (!partida) throw new Error('Partida não encontrada.');
@@ -266,24 +259,6 @@ function finalizar(db, { partidaId, vencedorTime, autorId = null, motivo = 'resu
         WHERE id = ?`,
     ).run(STATUS.FINALIZADA, time, agora(), motivo, String(partidaId));
 
-    for (const jogador of lista) {
-      if (jogador.time === time) {
-        usuarios.registrarVitoria(db, {
-          guildId: partida.guild_id,
-          userId: jogador.user_id,
-          apostado: partida.preco,
-          ganho: partida.preco,
-        });
-      } else {
-        usuarios.registrarDerrota(db, {
-          guildId: partida.guild_id,
-          userId: jogador.user_id,
-          apostado: partida.preco,
-          wo: motivo === 'wo',
-        });
-      }
-    }
-
     db.prepare(
       `INSERT INTO auditoria (guild_id, autor_id, acao, detalhe, criado_em)
        VALUES (?, ?, ?, ?, ?)`,
@@ -338,7 +313,6 @@ module.exports = {
   definirRegras,
   confirmar,
   assumir,
-  salvarPix,
   marcarPago,
   liberarSala,
   darGo,

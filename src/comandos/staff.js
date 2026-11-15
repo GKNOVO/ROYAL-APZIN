@@ -144,7 +144,7 @@ const comandos = [
           guildId: interaction.guildId,
           autorId: interaction.user.id,
           acao: 'PIX enviado na sala',
-          detalhe: `Sala ${partida.id} · ${registro.pix_chave}`,
+          detalhe: `Sala ${partida.id} · chave PIX enviada (valor omitido)`,
         });
         return responderPrivado(interaction, {
           embeds: [embedSucesso('PIX enviado na sala e na DM dos jogadores. Confira os comprovantes.')],

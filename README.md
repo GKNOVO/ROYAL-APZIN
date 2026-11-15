@@ -1,32 +1,38 @@
-# ORG Royal AP — Bot Discord v3
+# ORG Royal AP — Bot Discord v4
 
-Bot Discord.js v14 para filas e apostas de Free Fire, mediação, rankings, economia, roleta e lojinha. Nesta versão, o cadastro, consulta e autorização de PIX/mediadores usam o Supabase como fonte de verdade e o processo não inicia sem as credenciais remotas. O fluxo legado de filas/partidas ainda usa SQLite como armazenamento operacional temporário e está explicitamente separado do domínio PIX.
+Bot Discord.js v14 para filas e apostas de Free Fire, mediação, economia, roleta e lojinha. Na v4, PIX, carteira (moedas e giros), compras, roleta, inventário e rankings de perfis usam o Supabase como fonte de verdade. O dispatcher deduplica interações Discord e os helpers evitam uma segunda resposta inicial quando a API retorna 40060.
 
-## O que mudou
+## O que mudou na v4
 
-- Sistema antigo de atendimento removido completamente: arquivos, comandos, handlers, custom IDs, configurações e testes.
-- Migração `supabase/migrations/202611140002_royal_ap_core.sql` com constraints, índices, RLS/grants mínimos e RPCs atômicas para giro e compra.
-- `/roleta painel` e `/roleta girar`, com consumo idempotente de giros e prêmio ponderado.
-- `/lojinha listar`, `/lojinha comprar item:<ID>` e `/inventario`.
-- Produtos e prêmios são editáveis diretamente nas tabelas `royal_shop_items` e `royal_roulette_prizes`.
-- Convites gravados com a relação correta entre convidador e convidado, incluindo espelhamento no Supabase.
-- `scripts/migrar-supabase.js` para exportar dados existentes sem apagar o SQLite.
-- `supabase/migrations/202611150001_supabase_source_of_truth.sql` com colunas completas de PIX/comissão, RPC idempotente, cargos/configuração de mediadores e correção do retry de compras.
-- O boot falha antes do login se `SUPABASE_URL` ou `SUPABASE_SERVICE_ROLE_KEY` estiver ausente, evitando confirmar salvamentos apenas locais.
+- `InteractionCreate` deduplica por ID antes de qualquer operação assíncrona; o botão PIX abre o modal como primeira resposta e revalida autorização no submit.
+- Respostas Discord centralizadas usam `reply` uma única vez e, se o Discord indicar 40060, passam para `followUp` em vez de tentar outro ACK inicial.
+- Registro e consulta de PIX, comissão, titular, cidade e autorização continuam exclusivamente no Supabase. O envio de PIX para uma sala lê a chave do Supabase e não grava mais um snapshot em SQLite; as cópias antigas de partidas/auditoria são higienizadas.
+- Ajustes de coins/giros/estatísticas, transferências, roleta e compras usam RPCs atômicas com `request_id` idempotente e ledger remoto.
+- `/perfil`, `/verp`, `/ranking` e o botão de ranking consultam perfis Supabase; resultados de partidas também atualizam os rankings remotos, com retry idempotente por ID de partida.
+- Compras que concedem coins/giros creditam o perfil; resgates PIX/físicos ficam com status `pending`.
+- Entregas de cargos da roleta/loja também ficam pendentes no Supabase até a atribuição do Discord ser confirmada; falhas não são descartadas silenciosamente.
+- A migração v4 revoga execução pública das RPCs `SECURITY DEFINER`; somente `service_role` pode chamá-las.
 
-## Instalação
+## Instalação e atualização
 
 1. Use Node.js 22+ e execute `npm install`.
 2. Copie `.env.example` para `.env` e configure `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
-3. No SQL Editor do Supabase, aplique as migrações em ordem:
+3. No SQL Editor do Supabase, aplique as migrações nesta ordem:
    - `supabase/migrations/202611140001_discord_features.sql`
    - `supabase/migrations/202611140002_royal_ap_core.sql`
    - `supabase/migrations/202611150001_supabase_source_of_truth.sql`
-4. Faça um backup do `DATABASE_PATH` e execute `npm run migrate:supabase` para sincronizar perfis, convites, partidas e PIX.
+   - `supabase/migrations/202611150002_economy_source_of_truth.sql`
+4. Faça backup do banco local atual e execute `npm run migrate:supabase` antes de iniciar o bot v4. O backfill usa uma RPC idempotente para importar valores locais em perfis ausentes/zerados, preserva dados remotos não conflitantes e **aborta sem sobrescrever** quando o mesmo perfil tem valores locais/remotos diferentes; reconcilie esses casos manualmente e execute novamente. Após todas as gravações remotas, limpa chaves PIX locais antigas e snapshots/auditoria.
 5. Execute `npm run commands:sync` ou deixe o bot sincronizar os comandos no evento `ready`.
 6. Inicie com `npm start`.
 
-A chave `SUPABASE_SERVICE_ROLE_KEY` é somente server-side. Nunca envie essa variável ao Discord, ao cliente ou ao GitHub. O ZIP de distribuição deve ser criado sem `.env`, `node_modules`, bancos locais e artefatos antigos.
+`SUPABASE_SERVICE_ROLE_KEY` é segredo exclusivo do servidor. Nunca a envie ao Discord, ao cliente ou ao GitHub. O ZIP de distribuição não deve conter `.env`, `node_modules`, bancos locais ou arquivos de credenciais.
+
+## Persistência: limites explícitos
+
+PIX, saldo, giros, roleta, loja, inventário e estatísticas usadas nos rankings são persistidos no Supabase; não há fallback econômico em SQLite. Filas, estado operacional das partidas (canais/mensagens, pagamento, sala e sessão Nix), painéis, plantão, blacklist, telagem e alguns logs/configurações continuam em SQLite. `DATABASE_PATH` permanece necessário para esses módulos. Não remova o volume/backup SQLite até concluir uma migração de cutover específica para o fluxo operacional de partidas.
+
+O backfill é para transição. Não o use como sincronização contínua: após o corte, novas alterações econômicas são feitas somente pelas RPCs Supabase, e um arquivo SQLite antigo não deve ser tratado como autoridade para esses valores.
 
 ## Configurando prêmios e loja
 
@@ -50,21 +56,13 @@ values
   ('ID_DO_SERVIDOR', 'acai', 'Copão de Açaí', 'Resgate físico com a ADM', 500, 'physical', 'acai-copao', null);
 ```
 
-`reward_type` aceita `coins`, `spins`, `role`, `physical` e `pix`. PIX e prêmios físicos ficam registrados no inventário/histórico para pagamento ou entrega pela ADM. Compras e giros usam `request_id` derivado do ID da interação, evitando duplicidade em retries.
+Os produtos podem conceder coins, giros, cargos, resgates físicos ou PIX. Compras e giros usam IDs de interação como chaves de idempotência; estoque, saldo, inventário e ledger são processados pelo Supabase.
 
 ## Testes e operação
 
-- `npm test` executa os testes offline e verifica que não restaram tabelas, comandos ou arquivos do atendimento legado.
-- `npm run migrate:supabase` é idempotente e inclui `apostado`, `ganho`, comissão PIX e configurações de mediadores.
+- `npm test` executa testes offline, incluindo a proteção contra 40060 e verificações estáticas das rotas econômicas Supabase.
+- `npm run migrate:supabase` exporta o estado legado sem apagar o banco, reconcilia perfis sem sobrescrever conflitos e remove cópias locais de PIX somente depois de confirmar o backfill.
 - `npm run commands:sync` publica a lista atual e remove comandos remotos obsoletos conforme a resposta da API do Discord.
 - `npm start` abre também o health check HTTP para Railway/Render.
 
 O bot exige o **Server Members Intent** para rastrear convites. A detecção por diferença de usos é tratada como observação; convites simultâneos ou indisponíveis são registrados sem inventar um convidador.
-
-## Nota de auditoria de persistência
-
-O incidente do PIX foi confirmado: antes da v3, `/registrar_pix`, o modal, `/pix`, os botões “Meu PIX/Verificar Cadastro” e o fluxo de assumir sala liam e gravavam exclusivamente a tabela SQLite `staff`. `royal_pix_keys` era apenas um espelho criado por migração manual, portanto um novo deploy podia iniciar com outro `database/royal.db` vazio e aparentar perda do cadastro.
-
-Na v3, esses caminhos usam `royal_upsert_pix_key` e consultas Supabase, com chave primária `(guild_id,user_id)`, validação server-side, comissão, titular, cidade, status ativo e auditoria de request. O script de backfill deve ser executado uma vez antes do primeiro deploy v3 para transferir os registros existentes.
-
-Importante: esta auditoria identificou que uma conversão literal de **todo** o bot para Supabase exige migrar também filas, partidas, painéis, blacklist, plantão, telagem, histórico e transações legadas. Esses módulos não são usados para recuperar o PIX na v3, mas continuam dependentes do SQLite operacional até uma próxima etapa de cutover. Não remova o volume/backup SQLite desses módulos antes de concluir essa migração específica.

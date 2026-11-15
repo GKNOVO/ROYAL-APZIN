@@ -14,7 +14,7 @@ const partidas = require('../servicos/partidas');
 const staffSupabase = require('../servicos/staffSupabase');
 const mediadores = require('../servicos/mediadores');
 const fluxo = require('../servicos/fluxo');
-const { responderPrivado, responderErro, ehMediador, ehAdmin } = require('../util/seguranca');
+const { EFEMERO, responderPrivado, responderErro, ehMediador, ehAdmin } = require('../util/seguranca');
 const { embedSucesso } = require('../util/embeds');
 
 async function abrirModalRegras(interaction, db, partidaId) {
@@ -287,6 +287,23 @@ async function handleModal(interaction, { db, client }) {
 
   const tipo = partes[1];
   const partidaId = partes[2];
+  const reconhecido = String(tipo || '').startsWith('modalbot') ||
+    ['modalpix', 'modalregras', 'modalsala'].includes(tipo);
+  if (!reconhecido) return false;
+
+  // Submit de modal é uma interação nova. Confirmar imediatamente e depois
+  // editar a resposta deferida após as validações/gravações remotas.
+  if (!interaction.deferred && !interaction.replied) {
+    try {
+      await interaction.deferReply({ flags: EFEMERO });
+    } catch (erro) {
+      const jaReconhecida = Number(erro?.code) === 40060 || erro?.name === 'InteractionAlreadyReplied';
+      if (!jaReconhecida) {
+        console.error(`[modais] deferReply falhou em ${interaction.customId}:`, erro.message);
+        return true;
+      }
+    }
+  }
 
   try {
     // Modais do /botperfil (nome, avatar, descrição e status do bot).

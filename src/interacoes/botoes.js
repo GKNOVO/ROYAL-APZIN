@@ -6,7 +6,6 @@ const { ButtonStyle } = require('discord.js');
 const config = require('../config');
 const fluxo = require('../servicos/fluxo');
 const partidas = require('../servicos/partidas');
-const staff = require('../servicos/staff');
 const staffSupabase = require('../servicos/staffSupabase');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
@@ -285,7 +284,33 @@ async function handleBotao(interaction, ctx) {
       case 'roletagirar': {
         try {
           const resultado = await royalSupabase.girar({ guildId: interaction.guildId, userId: interaction.user.id, request: interaction.id });
-          await responderPrivado(interaction, { content: `🎰 Você ganhou **${resultado.prize_name}**! Recompensa: **${resultado.reward_type} · ${resultado.reward_value}**` });
+          let entrega = 'O giro e o prêmio foram registrados no Supabase.';
+          if (resultado.reward_type === 'role') {
+            try {
+              if (!interaction.member?.roles?.add) throw new Error('Membro/cargo indisponível para entrega.');
+              await interaction.member.roles.add(String(resultado.reward_value));
+              await royalSupabase.marcarRecompensaEntregue({
+                guildId: interaction.guildId,
+                userId: interaction.user.id,
+                request: interaction.id,
+              });
+              entrega = 'O cargo foi concedido.';
+            } catch (erroEntrega) {
+              await royalSupabase.auditar({
+                guildId: interaction.guildId,
+                actorId: interaction.user.id,
+                action: 'reward.delivery.pending',
+                entityType: 'roulette_spin',
+                entityId: resultado.spin_id,
+                requestId: interaction.id,
+                detail: `Cargo pendente: ${String(erroEntrega.message || 'falha Discord').slice(0, 300)}`,
+              });
+              entrega = 'O prêmio foi registrado, mas a entrega do cargo ficou pendente para a staff.';
+            }
+          }
+          await responderPrivado(interaction, {
+            content: `🎰 Você ganhou **${resultado.prize_name}**! Recompensa: **${resultado.reward_type} · ${resultado.reward_value}**\n${entrega}`,
+          });
         } catch (erro) {
           await responderErro(interaction, erro.message);
         }
@@ -494,10 +519,8 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'pixregistrar': {
-        if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
-          await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');
-          return true;
-        }
+        // showModal deve ser o primeiro ACK e precisa chegar dentro de 3s.
+        // A autorização é conferida obrigatoriamente no submit em aplicarPix.
         const { abrirModalPix } = require('./modais');
         await abrirModalPix(interaction);
         return true;
@@ -551,14 +574,17 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'ranking': {
-        const usuarios = require('../servicos/usuarios');
-        const lista = usuarios.top(db, interaction.guildId, 'vitorias', config.LIMITES.RANKING);
+        const lista = await royalSupabase.topPerfis(
+          interaction.guildId,
+          'vitorias',
+          config.LIMITES.RANKING,
+        );
         const medalhas = ['🥇', '🥈', '🥉'];
         const corpo = lista.length
           ? lista
               .map(
                 (linha, indice) =>
-                  `${medalhas[indice] ?? `**${indice + 1}.**`} ${mencao(linha.user_id)} — ${linha.vitorias}V / ${linha.derrotas}D`,
+                  `${medalhas[indice] ?? `**${indice + 1}.**`} ${mencao(linha.user_id)} — ${linha.wins}V / ${linha.losses}D`,
               )
               .join('\n')
           : 'Ranking ainda vazio. Bora fechar AP!';

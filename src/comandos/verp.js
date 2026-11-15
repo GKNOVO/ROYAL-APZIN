@@ -7,7 +7,7 @@
 
 const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
-const usuarios = require('../servicos/usuarios');
+const royalSupabase = require('../servicos/royalSupabase');
 const { responder } = require('../util/seguranca');
 const { embed, mencao, reais } = require('../util/embeds');
 
@@ -23,8 +23,8 @@ const comandos = [
 
     async executar(interaction, { db }) {
       const alvo = interaction.options.getUser('usuario') ?? interaction.user;
-      const resumo = usuarios.resumo(db, interaction.guildId, alvo.id);
-      const posicao = usuarios.posicaoNoRanking(db, interaction.guildId, alvo.id, 'vitorias');
+      const resumo = await royalSupabase.resumo(interaction.guildId, alvo.id);
+      const posicao = await royalSupabase.posicaoRanking(interaction.guildId, alvo.id, 'vitorias');
 
       return responder(interaction, {
         embeds: [

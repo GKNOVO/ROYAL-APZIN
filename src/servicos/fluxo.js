@@ -18,11 +18,11 @@ const { obterConfig, definirConfig } = require('../db');
 const { embed, reais, mencao, mencaoCargo, tituloCurto } = require('../util/embeds');
 const filas = require('./filas');
 const partidas = require('./partidas');
-const staff = require('./staff');
 const paineis = require('./paineis');
 const mediadores = require('./mediadores');
 const blacklist = require('./blacklist');
 const auditoria = require('./auditoria');
+const royalSupabase = require('./royalSupabase');
 
 const { STATUS } = partidas;
 
@@ -110,9 +110,7 @@ function embedPartida(partida, lista) {
       cor = config.CORES.aviso;
       campos.push({
         name: 'PIX do mediador',
-        value: partida.pix_chave
-          ? `\`${partida.pix_chave}\`${partida.pix_titular ? `\nTitular: ${partida.pix_titular}` : ''}`
-          : 'clique em **Enviar PIX**',
+        value: 'consulte a mensagem de pagamento enviada pelo mediador nesta sala',
         inline: false,
       });
       break;
@@ -123,7 +121,7 @@ function embedPartida(partida, lista) {
       cor = config.CORES.gelo;
       campos.push({
         name: 'PIX do mediador',
-        value: partida.pix_chave ? `\`${partida.pix_chave}\`` : '—',
+        value: 'pagamento confirmado',
         inline: true,
       });
       break;
@@ -348,7 +346,9 @@ async function atualizarPartida(client, db, partidaId) {
  * Usado pelo botão "Enviar PIX" e pelo comando /pix.
  */
 async function anunciarPix(client, db, { partidaId, mediadorId, chave, titular }) {
-  const partida = partidas.salvarPix(db, partidaId, { chave, titular });
+  // A chave vem do Supabase e nunca é persistida no SQLite da partida.
+  const partida = partidas.buscar(db, partidaId);
+  if (!partida) throw new Error('Partida não encontrada.');
   await atualizarPartida(client, db, partidaId);
 
   const jogadores = partidas.jogadores(db, partidaId);
@@ -490,8 +490,33 @@ async function entrarNaFila(client, db, { guild, userId, modo, preco, gelo }) {
 }
 
 /** Finaliza e avisa na sala. */
+async function finalizarERegistrarNoSupabase(db, { partidaId, vencedorTime, autorId, motivo }) {
+  const existente = partidas.buscar(db, partidaId);
+  let resultado;
+  if (existente?.status === STATUS.FINALIZADA) {
+    // Se a RPC remota falhou depois do commit SQLite, o mesmo botão pode
+    // repetir a sincronização. A RPC usa o ID da partida como chave idempotente.
+    if (Number(existente.vencedor_time) !== Number(vencedorTime) || existente.motivo_fim !== motivo) {
+      throw new Error('Essa partida já foi encerrada com outro resultado.');
+    }
+    resultado = { partida: existente, jogadores: partidas.jogadores(db, partidaId) };
+  } else {
+    resultado = partidas.finalizar(db, { partidaId, vencedorTime, autorId, motivo });
+  }
+
+  await royalSupabase.registrarResultadoPartida({
+    guildId: resultado.partida.guild_id,
+    matchId: partidaId,
+    winnerTime: vencedorTime,
+    stake: resultado.partida.preco,
+    players: resultado.jogadores,
+    reason: motivo,
+  });
+  return resultado;
+}
+
 async function encerrarPartida(client, db, { partidaId, vencedorTime, autorId, motivo = 'resultado' }) {
-  const resultado = partidas.finalizar(db, { partidaId, vencedorTime, autorId, motivo });
+  const resultado = await finalizarERegistrarNoSupabase(db, { partidaId, vencedorTime, autorId, motivo });
   await atualizarPartida(client, db, partidaId);
   await auditoria.registrar(db, client, {
     guildId: resultado.partida.guild_id,
@@ -503,7 +528,14 @@ async function encerrarPartida(client, db, { partidaId, vencedorTime, autorId, m
 }
 
 async function aplicarWO(client, db, { partidaId, timeAusente, autorId }) {
-  const resultado = partidas.aplicarWO(db, { partidaId, timeAusente, autorId });
+  const ausente = Number(timeAusente);
+  if (![1, 2].includes(ausente)) throw new Error('O time ausente precisa ser 1 ou 2.');
+  const resultado = await finalizarERegistrarNoSupabase(db, {
+    partidaId,
+    vencedorTime: ausente === 1 ? 2 : 1,
+    autorId,
+    motivo: 'wo',
+  });
   await atualizarPartida(client, db, partidaId);
   await auditoria.registrar(db, client, {
     guildId: resultado.partida.guild_id,
@@ -543,5 +575,4 @@ module.exports = {
   aplicarWO,
   cancelarPartida,
   definirConfig,
-  staff,
 };

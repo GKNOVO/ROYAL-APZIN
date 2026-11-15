@@ -16,8 +16,30 @@ const royalSupabase = require('../servicos/royalSupabase');
 const { registrarComandos } = require('../servicos/registroComandos');
 const membros = require('./membros');
 const { embedErro } = require('../util/embeds');
+const { responderPrivado } = require('../util/seguranca');
 
-const EFEMERO = 64;
+// Compartilhado entre chamadas repetidas de montar(client, db): uma mesma
+// interação nunca pode iniciar dois handlers concorrentes (p.ex. dois modais).
+const interacoesVistasPorCliente = new WeakMap();
+
+function primeiraEntrega(client, interaction) {
+  let vistas = interacoesVistasPorCliente.get(client);
+  if (!vistas) {
+    vistas = new Set();
+    interacoesVistasPorCliente.set(client, vistas);
+  }
+  const id = String(interaction.id || '');
+  if (!id || vistas.has(id)) return false;
+  vistas.add(id);
+  // Limite memória sem abrir uma janela de duplicação normal do Gateway.
+  if (vistas.size > 10_000) {
+    for (const antigo of vistas) {
+      vistas.delete(antigo);
+      if (vistas.size <= 8_000) break;
+    }
+  }
+  return true;
+}
 
 function montar(client, db) {
   const ctx = { db, client };
@@ -66,6 +88,12 @@ function montar(client, db) {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
+    // Precisa acontecer de forma síncrona, antes de qualquer await de cargo,
+    // Supabase ou banco SQLite.
+    if (!primeiraEntrega(client, interaction)) {
+      console.warn(`[interacao] evento duplicado ignorado: ${interaction.id}`);
+      return;
+    }
     try {
       if (interaction.isChatInputCommand()) {
         await comandos.executar(interaction, ctx);
@@ -101,12 +129,10 @@ function montar(client, db) {
       try {
         const aviso = {
           embeds: [embedErro('Deu um erro aqui. A staff já foi avisada — tente de novo em alguns segundos.')],
-          flags: EFEMERO,
         };
-        // Comando já adiado → edita a mensagem "pensando" (não deixa fantasma).
-        if (interaction.deferred && interaction.isChatInputCommand?.()) await interaction.editReply(aviso);
-        else if (interaction.deferred || interaction.replied) await interaction.followUp(aviso);
-        else await interaction.reply(aviso);
+        // O helper escolhe reply/editReply/followUp e trata inclusive 40060,
+        // quando o Discord aceitou o ACK, mas a resposta HTTP se perdeu.
+        await responderPrivado(interaction, aviso);
       } catch {
         /* se nem isso funcionar, o log acima já registrou */
       }
@@ -123,18 +149,12 @@ function montar(client, db) {
 
   client.on(Events.GuildMemberAdd, async (membro) => {
     try {
-      const codigo = await convites.detectar(db, membro);
+      const codigo = await convites.detectar(membro);
       if (codigo) {
         const guild = membro.guild;
         const cacheConvites = await guild.invites.fetch().catch(() => null);
         const convite = cacheConvites?.get(codigo);
         if (convite?.inviter) {
-          convites.registrar(db, {
-            guildId: guild.id,
-            convidadorId: convite.inviter.id,
-            convidadoId: membro.id,
-            codigo,
-          });
           await royalSupabase.registrarInvite({
             guildId: guild.id,
             invitedUserId: membro.id,

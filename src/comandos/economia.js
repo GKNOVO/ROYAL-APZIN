@@ -1,11 +1,10 @@
 'use strict';
 
-/** Economia: giros, moedas da loja e vitórias manuais. */
+/** Economia: perfis, moedas, giros e vitórias persistidos no Supabase. */
 
 const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
-const usuarios = require('../servicos/usuarios');
-const auditoria = require('../servicos/auditoria');
+const royal = require('../servicos/royalSupabase');
 const { exigirStaff, exigirAdmin, responderPrivado } = require('../util/seguranca');
 const { embedSucesso, numeroBR, mencao } = require('../util/embeds');
 
@@ -23,20 +22,26 @@ const comandos = [
       if (!(await exigirStaff(interaction))) return;
       const alvo = interaction.options.getUser('usuario');
       const quantidade = interaction.options.getInteger('quantidade');
-      const saldo = usuarios.adicionarGiros(db, {
+      if (!Number.isInteger(quantidade) || quantidade === 0) throw new Error('A quantidade de giros não pode ser zero.');
+      const perfil = await royal.ajustarPerfil({
         guildId: interaction.guildId,
         userId: alvo.id,
-        quantidade,
-        autorId: interaction.user.id,
+        deltas: { spins: quantidade },
+        reason: 'ajuste da staff',
+        actorId: interaction.user.id,
+        request: interaction.id,
       });
-      await auditoria.registrar(db, client, {
+      await royal.auditar({
         guildId: interaction.guildId,
-        autorId: interaction.user.id,
-        acao: 'Giros ajustados',
-        detalhe: `${mencao(alvo.id)} · ${quantidade > 0 ? '+' : ''}${quantidade} giros · saldo ${saldo}`,
+        actorId: interaction.user.id,
+        action: 'wallet.spins.adjust',
+        entityType: 'profile',
+        entityId: alvo.id,
+        requestId: interaction.id,
+        detail: `${quantidade > 0 ? '+' : ''}${quantidade} giros`,
       });
       return responderPrivado(interaction, {
-        embeds: [embedSucesso(`${mencao(alvo.id)} agora tem **${numeroBR(saldo)}** giros.`)],
+        embeds: [embedSucesso(`${mencao(alvo.id)} agora tem **${numeroBR(perfil.spins)}** giros.`)],
       });
     },
   },
@@ -54,22 +59,25 @@ const comandos = [
       if (!(await exigirStaff(interaction))) return;
       const alvo = interaction.options.getUser('usuario');
       const quantidade = interaction.options.getInteger('quantidade') ?? 1;
-      for (let i = 0; i < quantidade; i += 1) {
-        usuarios.registrarVitoria(db, { guildId: interaction.guildId, userId: alvo.id });
-      }
-      const resumo = usuarios.resumo(db, interaction.guildId, alvo.id);
-      await auditoria.registrar(db, client, {
+      const perfil = await royal.ajustarPerfil({
         guildId: interaction.guildId,
-        autorId: interaction.user.id,
-        acao: 'Vitória manual',
-        detalhe: `${mencao(alvo.id)} · +${quantidade} · total ${resumo.vitorias}`,
+        userId: alvo.id,
+        deltas: { wins: quantidade },
+        reason: 'vitória manual',
+        actorId: interaction.user.id,
+        request: interaction.id,
+      });
+      await royal.auditar({
+        guildId: interaction.guildId,
+        actorId: interaction.user.id,
+        action: 'profile.wins.adjust',
+        entityType: 'profile',
+        entityId: alvo.id,
+        requestId: interaction.id,
+        detail: `+${quantidade} vitória(s)`,
       });
       return responderPrivado(interaction, {
-        embeds: [
-          embedSucesso(
-            `+${quantidade} vitória(s) para ${mencao(alvo.id)}.\nAgora: **${resumo.vitorias}V / ${resumo.derrotas}D**.`,
-          ),
-        ],
+        embeds: [embedSucesso(`+${quantidade} vitória(s) para ${mencao(alvo.id)}.\nAgora: **${perfil.wins}V / ${perfil.losses}D**.`)],
       });
     },
   },
@@ -88,24 +96,30 @@ const comandos = [
       const alvo = interaction.options.getUser('usuario');
       const valor = interaction.options.getNumber('valor') ?? 0;
       const centavos = Math.max(0, Math.round(valor * 100));
-      usuarios.registrarVitoria(db, {
+      const perfil = await royal.ajustarPerfil({
         guildId: interaction.guildId,
         userId: alvo.id,
-        apostado: centavos,
-        ganho: centavos,
+        deltas: { wins: 1, apostado: centavos, ganho: centavos },
+        reason: 'vitória manual',
+        actorId: interaction.user.id,
+        request: interaction.id,
       });
-      const resumo = usuarios.resumo(db, interaction.guildId, alvo.id);
-      await auditoria.registrar(db, client, {
+      await royal.auditar({
         guildId: interaction.guildId,
-        autorId: interaction.user.id,
-        acao: 'Vitória registrada',
-        detalhe: `${mencao(alvo.id)} · valor ${centavos} centavos · total ${resumo.vitorias}`,
+        actorId: interaction.user.id,
+        action: 'profile.win.register',
+        entityType: 'profile',
+        entityId: alvo.id,
+        requestId: interaction.id,
+        detail: `vitória; apostado/ganho ${centavos} centavos`,
       });
+      const total = perfil.wins + perfil.losses;
+      const aproveitamento = total ? Math.round((perfil.wins / total) * 100) : 0;
       return responderPrivado(interaction, {
         embeds: [
           embedSucesso(
             `Vitória registrada para ${mencao(alvo.id)}${centavos ? ` (R$ ${(centavos / 100).toFixed(2).replace('.', ',')})` : ''}.\n` +
-              `Perfil: **${resumo.vitorias}V / ${resumo.derrotas}D** · ${resumo.aproveitamento}% de aproveitamento.`,
+              `Perfil: **${perfil.wins}V / ${perfil.losses}D** · ${aproveitamento}% de aproveitamento.`,
           ),
         ],
       });
@@ -144,47 +158,62 @@ const comandos = [
       const quantidade = interaction.options.getInteger('quantidade');
 
       if (sub === 'enviar') {
-        usuarios.transferirCoins(db, {
+        if (!Number.isInteger(quantidade) || quantidade <= 0) throw new Error('Informe uma quantidade maior que zero.');
+        if (alvo.id === interaction.user.id) throw new Error('Você não pode enviar moedas para você mesmo.');
+        const transferencia = await royal.transferirCoins({
           guildId: interaction.guildId,
           deId: interaction.user.id,
           paraId: alvo.id,
           valor: quantidade,
-          motivo: 'envio entre jogadores',
-          autorId: interaction.user.id,
+          actorId: interaction.user.id,
+          reason: 'envio entre jogadores',
+          request: interaction.id,
         });
-        const meu = usuarios.resumo(db, interaction.guildId, interaction.user.id);
+        await royal.auditar({
+          guildId: interaction.guildId,
+          actorId: interaction.user.id,
+          action: 'wallet.coins.transfer',
+          entityType: 'profile',
+          entityId: interaction.user.id,
+          requestId: interaction.id,
+          detail: `${numeroBR(quantidade)} ${config.MOEDA} para usuário ${alvo.id}`,
+        });
         return responderPrivado(interaction, {
           embeds: [
             embedSucesso(
-              `Você enviou **${numeroBR(quantidade)} ${config.MOEDA}** para ${mencao(alvo.id)}.\nSeu saldo: **${numeroBR(meu.coins)}**.`,
+              `Você enviou **${numeroBR(quantidade)} ${config.MOEDA}** para ${mencao(alvo.id)}.\n` +
+                `Seu saldo: **${numeroBR(transferencia.from_balance)}**.`,
             ),
           ],
         });
       }
 
       if (!(await exigirAdmin(interaction, 'Só ADM pode mexer no saldo de outra pessoa.'))) return;
-
-      const valor = sub === 'addcoins' ? Math.abs(quantidade) : -Math.abs(quantidade);
-      const saldo = usuarios.adicionarCoins(db, {
+      if (!Number.isInteger(quantidade) || quantidade <= 0) throw new Error('Informe uma quantidade maior que zero.');
+      const valor = sub === 'addcoins' ? quantidade : -quantidade;
+      const perfil = await royal.ajustarPerfil({
         guildId: interaction.guildId,
         userId: alvo.id,
-        valor,
-        motivo: sub === 'addcoins' ? 'crédito da staff' : 'débito da staff',
-        autorId: interaction.user.id,
-        tipo: sub === 'addcoins' ? 'loja_credito' : 'loja_debito',
+        deltas: { coins: valor },
+        reason: sub === 'addcoins' ? 'crédito da staff' : 'débito da staff',
+        actorId: interaction.user.id,
+        request: interaction.id,
       });
-
-      await auditoria.registrar(db, client, {
+      await royal.auditar({
         guildId: interaction.guildId,
-        autorId: interaction.user.id,
-        acao: sub === 'addcoins' ? 'Moedas adicionadas' : 'Moedas removidas',
-        detalhe: `${mencao(alvo.id)} · ${numeroBR(Math.abs(valor))} ${config.MOEDA} · saldo ${saldo}`,
+        actorId: interaction.user.id,
+        action: sub === 'addcoins' ? 'wallet.coins.credit' : 'wallet.coins.debit',
+        entityType: 'profile',
+        entityId: alvo.id,
+        requestId: interaction.id,
+        detail: `${numeroBR(Math.abs(valor))} ${config.MOEDA}`,
       });
 
       return responderPrivado(interaction, {
         embeds: [
           embedSucesso(
-            `${sub === 'addcoins' ? 'Adicionado' : 'Removido'} **${numeroBR(Math.abs(valor))} ${config.MOEDA}** de ${mencao(alvo.id)}.\nSaldo agora: **${numeroBR(saldo)}**.`,
+            `${sub === 'addcoins' ? 'Adicionado' : 'Removido'} **${numeroBR(Math.abs(valor))} ${config.MOEDA}** de ${mencao(alvo.id)}.\n` +
+              `Saldo agora: **${numeroBR(perfil.coins)}**.`,
           ),
         ],
       });

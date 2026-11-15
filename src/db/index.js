@@ -47,6 +47,19 @@ function migrar(db) {
   adicionarColuna(db, 'staff', 'pix_cidade', 'TEXT');
   // Guarda o session_id da Nix para o /go iniciar a sala de verdade.
   adicionarColuna(db, 'partidas', 'nix_sessao', 'TEXT');
+  // PIX é fonte de verdade no Supabase. Apaga snapshots locais antigos e
+  // higieniza o detalhe gravado por versões anteriores do comando /pix.
+  db.prepare('UPDATE partidas SET pix_chave = NULL, pix_titular = NULL WHERE pix_chave IS NOT NULL OR pix_titular IS NOT NULL').run();
+  const chavesLegadas = db.prepare('SELECT pix_chave FROM staff WHERE pix_chave IS NOT NULL').all();
+  const removerChaveDeAuditoria = db.prepare(
+    "UPDATE auditoria SET detalhe = replace(detalhe, ?, '[chave PIX omitida]') WHERE instr(detalhe, ?) > 0",
+  );
+  for (const { pix_chave: chave } of chavesLegadas) removerChaveDeAuditoria.run(String(chave), String(chave));
+  db.prepare(
+    `UPDATE auditoria
+        SET detalhe = substr(detalhe, 1, instr(detalhe, ' · ') + 2) || '[chave PIX omitida]'
+      WHERE acao = 'PIX enviado na sala' AND instr(detalhe, ' · ') > 0`,
+  ).run();
 }
 
 /** Lê/escreve configuração simples por servidor. */

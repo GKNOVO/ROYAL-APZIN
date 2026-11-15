@@ -10,6 +10,15 @@ const config = require('../config');
 const { embedErro } = require('./embeds');
 
 const EFEMERO = MessageFlags?.Ephemeral ?? 64;
+const reconhecidaRemotamente = new WeakSet();
+
+function jaFoiReconhecida(erro) {
+  return (
+    Number(erro?.code) === 40060 ||
+    erro?.name === 'InteractionAlreadyReplied' ||
+    /interaction has already been acknowledged|interaction already replied/i.test(String(erro?.message || ''))
+  );
+}
 
 function temCargo(member, id) {
   if (!id || !member) return false;
@@ -34,14 +43,10 @@ function ehStaff(member) {
   return Boolean(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild));
 }
 
-/** Clique em botão/menu/modal: a primeira resposta já foi consumida pelo ack. */
+/** Só botões/menus usam deferUpdate; modais e comandos usam deferReply. */
 function ehComponente(interaction) {
-  return Boolean(
-    interaction.isButton?.() ||
-      interaction.isAnySelectMenu?.() ||
-      interaction.isModalSubmit?.() ||
-      interaction.isContextMenuCommand?.(),
-  );
+  if (typeof interaction.isMessageComponent === 'function') return interaction.isMessageComponent();
+  return Boolean(interaction.isButton?.() || interaction.isAnySelectMenu?.());
 }
 
 /** Responde sem saber se a interação já foi respondida. */
@@ -50,17 +55,25 @@ async function responder(interaction, payload) {
   // Comando já adiado (deferReply) → usa a mensagem "pensando" (editReply).
   if (interaction.deferred && !ehComponente(interaction)) return interaction.editReply(corpo);
   // Componente já confirmado (deferUpdate/update) → followUp, sem mexer no painel.
-  if (interaction.deferred || interaction.replied) return interaction.followUp(corpo);
-  return interaction.reply(corpo);
+  if (interaction.deferred || interaction.replied || reconhecidaRemotamente.has(interaction)) {
+    return interaction.followUp(corpo);
+  }
+  try {
+    return await interaction.reply(corpo);
+  } catch (erro) {
+    // Se o Discord aceitou o ACK mas a resposta HTTP se perdeu, os flags locais
+    // continuam falsos. 40060 prova que já houve ACK: não tente reply de novo.
+    if (!jaFoiReconhecida(erro)) throw erro;
+    reconhecidaRemotamente.add(interaction);
+    return interaction.followUp(corpo);
+  }
 }
 
 /** Responde só para quem clicou (ninguém mais vê). */
 async function responderPrivado(interaction, payload) {
   const corpo = typeof payload === 'string' ? { content: payload } : { ...payload };
   corpo.flags = (corpo.flags ?? 0) | EFEMERO;
-  if (interaction.deferred && !ehComponente(interaction)) return interaction.editReply(corpo);
-  if (interaction.deferred || interaction.replied) return interaction.followUp(corpo);
-  return interaction.reply(corpo);
+  return responder(interaction, corpo);
 }
 
 async function responderErro(interaction, mensagem) {

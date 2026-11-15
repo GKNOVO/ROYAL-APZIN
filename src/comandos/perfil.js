@@ -6,7 +6,6 @@ const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
 const usuarios = require('../servicos/usuarios');
 const staffSupabase = require('../servicos/staffSupabase');
-const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
 const royalSupabase = require('../servicos/royalSupabase');
 const { responderPrivado, responder } = require('../util/seguranca');
@@ -21,8 +20,8 @@ const comandos = [
 
     async executar(interaction, { db }) {
       const alvo = interaction.options.getUser('usuario') ?? interaction.user;
-      const resumo = usuarios.resumo(db, interaction.guildId, alvo.id);
-      const posicao = usuarios.posicaoNoRanking(db, interaction.guildId, alvo.id, 'vitorias');
+      const resumo = await royalSupabase.resumo(interaction.guildId, alvo.id);
+      const posicao = await royalSupabase.posicaoRanking(interaction.guildId, alvo.id, 'vitorias');
       const registroStaff = await staffSupabase.obter(interaction.guildId, alvo.id);
       const ultimas = usuarios.historicoApostas(db, interaction.guildId, alvo.id, 3);
 
@@ -35,7 +34,7 @@ const comandos = [
         { name: 'Já apostou', value: reais(resumo.apostado), inline: true },
         { name: 'Prêmios recebidos', value: reais(resumo.ganho), inline: true },
         { name: 'Posição no ranking', value: posicao ? `#${posicao}` : 'fora do top', inline: true },
-        { name: 'Convites', value: convites.contar(db, interaction.guildId, alvo.id).toString(), inline: true },
+        { name: 'Convites', value: String(await royalSupabase.contarConvites(interaction.guildId, alvo.id)), inline: true },
       ];
 
       if (registroStaff?.pix_chave) {
@@ -91,9 +90,7 @@ const comandos = [
 
     async executar(interaction, { db }) {
       const tipo = interaction.options.getString('tipo') ?? 'vitorias';
-      const lista = tipo === 'invites' && config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY
-        ? await royalSupabase.rankingConvites(interaction.guildId, config.LIMITES.RANKING)
-        : usuarios.top(db, interaction.guildId, tipo, config.LIMITES.RANKING);
+      const lista = await royalSupabase.ranking(interaction.guildId, tipo, config.LIMITES.RANKING);
       const medalhas = ['🥇', '🥈', '🥉'];
 
       const corpo = lista.length
@@ -106,7 +103,7 @@ const comandos = [
                   ? `${numeroBR(linha.coins)} ${config.MOEDA}`
                   : tipo === 'giros'
                     ? `${numeroBR(linha.giros)} giros`
-                    : `${linha.vitorias}V / ${linha.derrotas}D`;
+                    : `${linha.wins}V / ${linha.losses}D`;
               return `${posicao} ${mencao(linha.user_id)} — ${valor}`;
             })
             .join('\n')
@@ -155,8 +152,8 @@ const comandos = [
     async executar(interaction, { db }) {
       const alvo = interaction.options.getUser('usuario');
       if (alvo) {
-        const total = convites.contar(db, interaction.guildId, alvo.id);
-        const quemConvidou = convites.doConvidado(db, interaction.guildId, alvo.id);
+        const total = await royalSupabase.contarConvites(interaction.guildId, alvo.id);
+        const quemConvidou = await royalSupabase.conviteDoUsuario(interaction.guildId, alvo.id);
         return responderPrivado(interaction, {
           embeds: [
             embed(
@@ -168,9 +165,9 @@ const comandos = [
         });
       }
 
-      const lista = convites.top(db, interaction.guildId, config.LIMITES.RANKING);
+      const lista = await royalSupabase.rankingConvites(interaction.guildId, config.LIMITES.RANKING);
       const corpo = lista.length
-        ? lista.map((linha, indice) => `**${indice + 1}.** ${mencao(linha.convidador_id)} — ${linha.total} convite(s)`).join('\n')
+        ? lista.map((linha, indice) => `**${indice + 1}.** ${mencao(linha.inviter_user_id)} — ${linha.total} convite(s)`).join('\n')
         : 'Ainda não registrei convites. Eu conto a partir do momento em que o bot ficou online.';
 
       return responderPrivado(interaction, {
