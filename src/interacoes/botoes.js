@@ -16,6 +16,7 @@ const auditoria = require('../servicos/auditoria');
 const royalSupabase = require('../servicos/royalSupabase');
 const { embed, embedSucesso, embedErro, reais, mencao, mencaoCargo, dataBR } = require('../util/embeds');
 const {
+  EFEMERO,
   responderPrivado,
   responderErro,
   ehMediador,
@@ -24,6 +25,16 @@ const {
 } = require('../util/seguranca');
 
 const varianteNome = (modo, id) => config.varianteDoModo(modo, id)?.nome ?? String(id);
+
+/** O botão já pode ter sido reconhecido por deferUpdate antes da consulta PIX. */
+async function responderVerificacaoPix(interaction, payload) {
+  const corpo = typeof payload === 'string' ? { content: payload } : { ...payload };
+  corpo.flags = (corpo.flags ?? 0) | EFEMERO;
+  if (interaction.deferred || interaction.replied) return interaction.followUp(corpo);
+  // O helper também trata o caso em que o Discord aceitou o ACK, mas o estado
+  // local ainda está falso (40060): tenta followUp, nunca um segundo reply.
+  return responderPrivado(interaction, corpo);
+}
 
 /**
  * Mensagem PÚBLICA na sala: quem confirmou, quem falta e a marcação da
@@ -532,7 +543,7 @@ async function handleBotao(interaction, ctx) {
           ? `**Chave PIX:** \`${registro.pix_chave}\`\n**Titular:** ${registro.pix_titular || '—'}\n` +
             `**Cidade:** ${registro.pix_cidade || '—'}\n**Comissão:** ${(registro.comissao * 100).toFixed(1)}%`
           : 'Você ainda não cadastrou PIX. Clique em **Configurar Pix**.';
-        await responderPrivado(interaction, { embeds: [embed('💠 Seu cadastro PIX', corpo)] });
+        await responderVerificacaoPix(interaction, { embeds: [embed('💠 Seu cadastro PIX', corpo)] });
         return true;
       }
 
@@ -656,4 +667,7 @@ async function handleBotao(interaction, ctx) {
   }
 }
 
-module.exports = { handleBotao };
+module.exports = {
+  handleBotao,
+  responderVerificacaoPix,
+};

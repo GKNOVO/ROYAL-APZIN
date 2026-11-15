@@ -9,6 +9,7 @@ process.env.DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'roy
 const { abrirBanco } = require('../src/db');
 const comandos = require('../src/comandos');
 const { responderPrivado, ehComponente, EFEMERO } = require('../src/util/seguranca');
+const { responderVerificacaoPix } = require('../src/interacoes/botoes');
 const db = abrirBanco(process.env.DATABASE_PATH);
 const testes = [];
 function test(name, fn) { testes.push({ name, fn }); }
@@ -129,6 +130,38 @@ test('componente já adiado responde com followUp, sem segundo ACK inicial', asy
   };
   await responderPrivado(interaction, { content: 'Cadastro PIX.' });
   assert.deepEqual(chamadas, ['followUp']);
+});
+
+test('ap:pixverificar usa followUp quando o botão já foi reconhecido ou deferido', async () => {
+  for (const estado of [
+    { deferred: true, replied: false },
+    { deferred: false, replied: true },
+  ]) {
+    const chamadas = [];
+    const interaction = {
+      ...estado,
+      reply: async () => chamadas.push('reply'),
+      update: async () => chamadas.push('update'),
+      followUp: async (payload) => chamadas.push(['followUp', payload]),
+    };
+    await responderVerificacaoPix(interaction, { content: 'Cadastro PIX.' });
+    assert.equal(chamadas.length, 1);
+    assert.equal(chamadas[0][0], 'followUp');
+    assert.equal(chamadas[0][1].flags & EFEMERO, EFEMERO);
+  }
+
+  const chamadas = [];
+  const ackPerdido = {
+    deferred: false,
+    replied: false,
+    reply: async () => {
+      chamadas.push('reply');
+      throw Object.assign(new Error('Interaction has already been acknowledged'), { code: 40060 });
+    },
+    followUp: async () => chamadas.push('followUp'),
+  };
+  await responderVerificacaoPix(ackPerdido, { content: 'Cadastro PIX.' });
+  assert.deepEqual(chamadas, ['reply', 'followUp']);
 });
 
 test('modal/context menu não são componentes e resposta deferida usa editReply', async () => {
