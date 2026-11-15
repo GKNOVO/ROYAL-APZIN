@@ -30,4 +30,14 @@ test('novos comandos estão registrados e comandos legados não existem', () => 
   for (const nome of comandos.nomes) assert.equal(/legado-impossivel/i.test(nome), false, nome);
 });
 test('diretório de serviços não contém o módulo removido', () => assert.equal(fs.readdirSync(path.join(__dirname, '../src/servicos')).some((name) => /legacy-service/i.test(name)), false));
+test('fluxos críticos de PIX apontam para o repositório Supabase', () => {
+  const arquivos = ['src/interacoes/modais.js', 'src/interacoes/botoes.js', 'src/comandos/staff.js', 'src/comandos/perfil.js'];
+  for (const arquivo of arquivos) {
+    const texto = fs.readFileSync(path.join(__dirname, '..', arquivo), 'utf8');
+    assert.match(texto, /staffSupabase/);
+  }
+  const sql = fs.readFileSync(path.join(__dirname, '../supabase/migrations/202611150001_supabase_source_of_truth.sql'), 'utf8');
+  assert.match(sql, /royal_upsert_pix_key/);
+  assert.match(sql, /primary key\(guild_id,request_id\)/i);
+});
 db.close(); console.log(`✅ ${ok} testes offline concluídos.`);

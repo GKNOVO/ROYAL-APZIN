@@ -7,6 +7,7 @@ const config = require('../config');
 const fluxo = require('../servicos/fluxo');
 const partidas = require('../servicos/partidas');
 const staff = require('../servicos/staff');
+const staffSupabase = require('../servicos/staffSupabase');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
 const plantao = require('../servicos/plantao');
@@ -158,10 +159,10 @@ async function confirmarRegras(interaction, { db, client }, partidaId) {
 }
 
 async function assumirSala(interaction, { db, client }, partidaId) {
-  if (!ehMediador(interaction.member)) {
+  if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
     return responderErro(interaction, 'Só mediadores/ADM podem assumir salas.');
   }
-  const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+  const registro = await staffSupabase.obter(interaction.guildId, interaction.user.id);
   if (!registro?.pix_chave) {
     return responderErro(
       interaction,
@@ -187,11 +188,11 @@ async function assumirSala(interaction, { db, client }, partidaId) {
 }
 
 async function enviarPix(interaction, { db, client }, partidaId) {
-  if (!ehMediador(interaction.member)) return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
+  if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
   const partida = partidas.buscar(db, partidaId);
   if (!partida) return responderErro(interaction, 'Sala não encontrada.');
 
-  const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+  const registro = await staffSupabase.obter(interaction.guildId, interaction.user.id);
   if (!registro?.pix_chave) {
     return responderErro(interaction, 'Você ainda não cadastrou PIX. Use `/registrar_pix`.');
   }
@@ -454,7 +455,7 @@ async function handleBotao(interaction, ctx) {
           await responderErro(interaction, 'Só ADM vê a gestão de PIX dos mediadores.');
           return true;
         }
-        const mediadoresCadastrados = staff.listar(db, interaction.guildId);
+        const mediadoresCadastrados = await staffSupabase.listar(interaction.guildId);
         const corpo = mediadoresCadastrados.length
           ? mediadoresCadastrados
               .map(
@@ -493,7 +494,7 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'pixregistrar': {
-        if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+        if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
           await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');
           return true;
         }
@@ -503,7 +504,7 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'pixverificar': {
-        const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+        const registro = await staffSupabase.obter(interaction.guildId, interaction.user.id);
         const corpo = registro?.pix_chave
           ? `**Chave PIX:** \`${registro.pix_chave}\`\n**Titular:** ${registro.pix_titular || '—'}\n` +
             `**Cidade:** ${registro.pix_cidade || '—'}\n**Comissão:** ${(registro.comissao * 100).toFixed(1)}%`
@@ -607,7 +608,7 @@ async function handleBotao(interaction, ctx) {
       }
 
       case 'pixinfo': {
-        const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+        const registro = await staffSupabase.obter(interaction.guildId, interaction.user.id);
         const corpo = registro?.pix_chave
           ? `**Chave:** \`${registro.pix_chave}\`\n**Titular:** ${registro.pix_titular || '—'}\n` +
             `**Comissão:** ${(registro.comissao * 100).toFixed(1)}%\n**Status:** ${registro.ativo ? 'ativo' : 'inativo'}`

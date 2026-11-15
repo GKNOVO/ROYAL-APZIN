@@ -13,6 +13,7 @@ const config = require('../config');
 const filas = require('../servicos/filas');
 const paineis = require('../servicos/paineis');
 const mediadores = require('../servicos/mediadores');
+const staffSupabase = require('../servicos/staffSupabase');
 const plantao = require('../servicos/plantao');
 const { responderPrivado, responderErro, ehAdmin } = require('../util/seguranca');
 const { embed, reais, listaUsuarios } = require('../util/embeds');
@@ -82,9 +83,18 @@ async function handleSelect(interaction, ctx) {
     // Pode vir mais de um cargo (ex.: Mediador + Administrador juntos).
     const valores = (interaction.values || []).map(String).filter(Boolean);
     try {
-      if (acao === 'medcargos') mediadores.definirCargos(ctx.db, interaction.guildId, valores);
-      if (acao === 'medfila') mediadores.definirCanalBatePonto(ctx.db, interaction.guildId, valores[0]);
-      if (acao === 'medpix') mediadores.definirCanalConfigPix(ctx.db, interaction.guildId, valores[0]);
+      if (acao === 'medcargos') {
+        mediadores.definirCargos(ctx.db, interaction.guildId, valores);
+        await staffSupabase.definirConfig(interaction.guildId, 'cargos_mediadores', JSON.stringify(valores));
+      }
+      if (acao === 'medfila') {
+        mediadores.definirCanalBatePonto(ctx.db, interaction.guildId, valores[0]);
+        await staffSupabase.definirConfig(interaction.guildId, 'canal_bateponto', valores[0]);
+      }
+      if (acao === 'medpix') {
+        mediadores.definirCanalConfigPix(ctx.db, interaction.guildId, valores[0]);
+        await staffSupabase.definirConfig(interaction.guildId, 'canal_configpix', valores[0]);
+      }
     } catch (erro) {
       console.error(`[selects] não consegui salvar ${acao}:`, erro.message);
       await responderErro(interaction, 'Não consegui salvar essa escolha. Tente de novo.').catch(() => {});

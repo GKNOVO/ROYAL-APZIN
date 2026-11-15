@@ -11,7 +11,7 @@ const {
 } = require('discord.js');
 const config = require('../config');
 const partidas = require('../servicos/partidas');
-const staff = require('../servicos/staff');
+const staffSupabase = require('../servicos/staffSupabase');
 const mediadores = require('../servicos/mediadores');
 const fluxo = require('../servicos/fluxo');
 const { responderPrivado, responderErro, ehMediador, ehAdmin } = require('../util/seguranca');
@@ -239,7 +239,7 @@ async function abrirModalPix(interaction) {
 }
 
 async function aplicarPix(interaction, db) {
-  if (!mediadores.ehMediador(db, interaction.guildId, interaction.member)) {
+  if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
     await responderErro(interaction, 'Só mediadores/ADM registram PIX de recebimento.');
     return true;
   }
@@ -259,7 +259,7 @@ async function aplicarPix(interaction, db) {
     if (titular.length < 3) throw new Error('Informe o nome completo do titular do PIX.');
     if (cidade.length < 2) throw new Error('Informe a cidade de registro da conta.');
 
-    const registro = staff.registrarPix(db, {
+    const registro = await staffSupabase.registrarPix({
       guildId: interaction.guildId,
       userId: interaction.user.id,
       chave,

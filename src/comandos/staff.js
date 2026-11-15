@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const config = require('../config');
 const staff = require('../servicos/staff');
+const staffSupabase = require('../servicos/staffSupabase');
 const partidas = require('../servicos/partidas');
 const usuarios = require('../servicos/usuarios');
 const auditoria = require('../servicos/auditoria');
@@ -40,14 +41,16 @@ const comandos = [
       ),
 
     async executar(interaction, { db, client }) {
-      if (!(await exigirStaff(interaction, 'Só staff/mediador com cargo pode registrar PIX.'))) return;
+      if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
+        return responderErro(interaction, 'Só staff/mediador com cargo pode registrar PIX.');
+      }
 
       const chave = interaction.options.getString('chave');
       const titular = interaction.options.getString('titular');
       const porcento = interaction.options.getNumber('comissao');
       const comissao = porcento === null || porcento === undefined ? undefined : porcento / 100;
 
-      const registro = staff.registrarPix(db, {
+      const registro = await staffSupabase.registrarPix({
         guildId: interaction.guildId,
         userId: interaction.user.id,
         chave,
@@ -81,7 +84,7 @@ const comandos = [
       .setDescription('Envia sua chave PIX na sala de AP que você está mediando'),
 
     async executar(interaction, { db, client }) {
-      if (!ehMediador(interaction.member) && !ehAdmin(interaction.member)) {
+      if (!(await staffSupabase.temCargoMediador(interaction.guildId, interaction.member))) {
         return responderErro(interaction, 'Só o mediador da sala pode enviar o PIX.');
       }
 
@@ -118,7 +121,7 @@ const comandos = [
         );
       }
 
-      const registro = staff.obter(db, interaction.guildId, interaction.user.id);
+      const registro = await staffSupabase.obter(interaction.guildId, interaction.user.id);
       if (!registro?.pix_chave) {
         return responderErro(
           interaction,
@@ -198,6 +201,7 @@ const comandos = [
       if (!(await exigirMediador(interaction))) return;
       const ativas = partidas.ativas(db, interaction.guildId);
       const pendentes = ativas.filter((partida) => partida.status !== 'confirmando').length;
+      const registroPix = await staffSupabase.obter(interaction.guildId, interaction.user.id);
 
       const embedPainel = embed(
         '👑 Painel do Mediador',
@@ -217,8 +221,8 @@ const comandos = [
             { name: 'Aguardando você', value: String(pendentes), inline: true },
             {
               name: 'Sua comissão',
-              value: staff.obter(db, interaction.guildId, interaction.user.id)
-                ? `${(staff.obter(db, interaction.guildId, interaction.user.id).comissao * 100).toFixed(1)}%`
+              value: registroPix
+                ? `${(registroPix.comissao * 100).toFixed(1)}%`
                 : 'sem PIX cadastrado',
               inline: true,
             },

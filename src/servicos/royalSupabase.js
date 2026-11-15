@@ -27,7 +27,7 @@ async function rankingConvites(guildId, limit = 10) {
   const { data, error } = await cliente().from('royal_invites').select('inviter_user_id').eq('guild_id', String(guildId)).not('inviter_user_id', 'is', null);
   if (error) throw new Error(`ranking invites: ${error.message}`);
   const mapa = new Map(); for (const row of data || []) mapa.set(row.inviter_user_id, (mapa.get(row.inviter_user_id) || 0) + 1);
-  return [...mapa.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([inviter_user_id,total]) => ({ inviter_user_id,total }));
+  return [...mapa.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([inviter_user_id,total]) => ({ user_id: inviter_user_id, inviter_user_id, total }));
 }
 async function registrarInvite({ guildId, invitedUserId, inviterUserId, code, confidence = 'observed' }) {
   const { error } = await cliente().from('royal_invites').upsert({ guild_id: String(guildId), invited_user_id: String(invitedUserId), inviter_user_id: inviterUserId ? String(inviterUserId) : null, code: code || null, confidence }, { onConflict: 'guild_id,invited_user_id', ignoreDuplicates: true });
@@ -38,7 +38,17 @@ async function perfil(guildId, userId) {
   if (error) throw new Error(`perfil Supabase: ${error.message}`); return data;
 }
 async function auditar(evento) {
-  const { error } = await cliente().from('royal_audit_events').insert({ ...evento, guild_id: evento.guildId, actor_id: evento.actorId, entity_type: evento.entityType, entity_id: evento.entityId, request_id: evento.requestId });
+  const { error } = await cliente().from('royal_audit_events').insert({
+    guild_id: evento.guildId ? String(evento.guildId) : null,
+    actor_id: evento.actorId ? String(evento.actorId) : null,
+    action: String(evento.action || 'unknown'),
+    entity_type: evento.entityType || null,
+    entity_id: evento.entityId ? String(evento.entityId) : null,
+    request_id: evento.requestId || null,
+    before_data: evento.beforeData || null,
+    after_data: evento.afterData || null,
+    detail: evento.detail || null,
+  });
   if (error) console.error('[royal-supabase] auditoria:', error.message);
 }
 module.exports = { girar, comprar, listarItens, inventario, rankingConvites, registrarInvite, perfil, auditar };

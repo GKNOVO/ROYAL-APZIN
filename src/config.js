@@ -239,4 +239,14 @@ config.validarToken = function validarToken() {
   return null;
 };
 
+config.validarPersistencia = function validarPersistencia() {
+  if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
+    return 'SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios para persistência de PIX, mediadores e economia.';
+  }
+  if (!/^https:\/\/[^\s/]+\.supabase\.co(?:\/.*)?$/i.test(config.SUPABASE_URL)) {
+    return 'SUPABASE_URL parece inválida. Use a URL HTTPS do projeto Supabase.';
+  }
+  return null;
+};
+
 module.exports = config;

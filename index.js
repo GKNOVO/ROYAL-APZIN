@@ -43,6 +43,16 @@ if (erroConfig) {
   process.exit(1);
 }
 
+const erroPersistencia = config.validarPersistencia();
+if (erroPersistencia) {
+  separador();
+  console.error('❌ Persistência remota não configurada');
+  console.error(`   ${erroPersistencia}`);
+  console.error('   O processo foi interrompido para evitar salvar novos dados apenas no armazenamento local.');
+  separador();
+  process.exit(1);
+}
+
 separador();
 console.log('👑 ORG Royal AP · bot de filas e apostas');
 console.log(`   Node ${process.version} · porta HTTP ${Number(process.env.PORT) || 3000}`);

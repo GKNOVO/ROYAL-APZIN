@@ -5,7 +5,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const config = require('../config');
 const usuarios = require('../servicos/usuarios');
-const staff = require('../servicos/staff');
+const staffSupabase = require('../servicos/staffSupabase');
 const convites = require('../servicos/convites');
 const auditoria = require('../servicos/auditoria');
 const royalSupabase = require('../servicos/royalSupabase');
@@ -23,7 +23,7 @@ const comandos = [
       const alvo = interaction.options.getUser('usuario') ?? interaction.user;
       const resumo = usuarios.resumo(db, interaction.guildId, alvo.id);
       const posicao = usuarios.posicaoNoRanking(db, interaction.guildId, alvo.id, 'vitorias');
-      const registroStaff = staff.obter(db, interaction.guildId, alvo.id);
+      const registroStaff = await staffSupabase.obter(interaction.guildId, alvo.id);
       const ultimas = usuarios.historicoApostas(db, interaction.guildId, alvo.id, 3);
 
       const campos = [
